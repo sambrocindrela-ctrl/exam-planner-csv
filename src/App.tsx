@@ -1,2 +1,6 @@
-import ExamPlanner from "./ExamPlanner";
-export default function App() { return <ExamPlanner />; }
+import React from "react";
+import ExamPlannerCSV from "./ExamPlannerCSV";
+
+export default function App() {
+  return <ExamPlannerCSV />;
+}
