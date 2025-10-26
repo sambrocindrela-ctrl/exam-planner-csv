@@ -183,7 +183,6 @@ export default function ExamPlannerCSV() {
   const [filterQuad, setFilterQuad] = useState<0 | 1 | 2>(0);
 
   const activePeriod = periods.find((p) => p.id === activePid)!;
-  const dayLabels = ["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"];
 
   function isDisabledDay(d: Date, p: PeriodMeta) {
     const sd = parseISO(p.startStr);
@@ -506,7 +505,8 @@ export default function ExamPlannerCSV() {
                   ? anyNum
                   : new Date().getFullYear();
 
-              const pquad = normQuad(r.period_quad || r.PERIOD_QUAD || r.quadrimestre ?? r.quad) || 1;
+              const pquad = normQuad(r.period_quad ?? r.PERIOD_QUAD ?? r.quadrimestre ?? r.quad) || 1;
+
 
               const startStr =
                 parseDate(r.period_inici || r.PERIOD_INICI || r.start) ||

@@ -1,4 +1,4 @@
-import React from "react";
+// src/App.tsx
 import ExamPlannerCSV from "./ExamPlannerCSV";
 
 export default function App() {
