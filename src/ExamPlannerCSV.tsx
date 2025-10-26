@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from "react";
+// src/ExamPlannerCSV.tsx
+import { useMemo, useState, useEffect } from "react";
 import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
@@ -194,7 +195,8 @@ export default function ExamPlannerCSV() {
   }
 
   const allCursos = useMemo(
-    () => Array.from(new Set(subjects.map((s) => s.curs).filter(Boolean))) as string[],
+    () =>
+      Array.from(new Set(subjects.map((s) => s.curs).filter(Boolean))) as string[],
     [subjects]
   );
 
@@ -286,7 +288,10 @@ export default function ExamPlannerCSV() {
       endStr: format(fridayOfWeek(today), "yyyy-MM-dd"),
     };
     setPeriods([...periods, meta]);
-    setSlotsPerPeriod((sp) => ({ ...sp, [newId]: [{ start: "08:00", end: "10:00" }] }));
+    setSlotsPerPeriod((sp) => ({
+      ...sp,
+      [newId]: [{ start: "08:00", end: "10:00" }],
+    }));
     setActivePid(newId);
   }
   function removePeriod(id: number) {
@@ -308,17 +313,22 @@ export default function ExamPlannerCSV() {
     }
   }
 
-  /* Exportacions bàsiques (CSV/TXT/JSON) */
+  /* Exportacions (CSV/TXT/JSON) */
   function exportJSON() {
     const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "planificador-examens.json"; a.click();
+    a.href = url;
+    a.download = "planificador-examens.json";
+    a.click();
     URL.revokeObjectURL(url);
   }
   function importJSON(ev: React.ChangeEvent<HTMLInputElement>) {
-    const f = ev.target.files?.[0]; if (!f) return;
+    const f = ev.target.files?.[0];
+    if (!f) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -327,19 +337,27 @@ export default function ExamPlannerCSV() {
         if (data.slotsPerPeriod) setSlotsPerPeriod(data.slotsPerPeriod);
         if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
         if (Array.isArray(data.subjects)) setSubjects(data.subjects);
-        if (Array.isArray(data.periods) && data.periods.length) setActivePid(data.periods[0].id);
-      } catch { alert("JSON no vàlid"); }
+        if (Array.isArray(data.periods) && data.periods.length)
+          setActivePid(data.periods[0].id);
+      } catch {
+        alert("JSON no vàlid");
+      }
     };
     reader.readAsText(f);
     ev.currentTarget.value = "";
   }
   function exportCSV() {
     const rows: string[] = [];
-    rows.push("Periode,Data,Slot,HoraInici,HoraFi,Codigo,Siglas,Nivel,Curs,Quadrimestre");
+    rows.push(
+      "Periode,Data,Slot,HoraInici,HoraFi,Codigo,Siglas,Nivel,Curs,Quadrimestre"
+    );
     for (const p of periods) {
       const slots = slotsPerPeriod[p.id] ?? [];
       const amap = assignedPerPeriod[p.id] ?? {};
-      for (const { mon } of eachWeek(mondayOfWeek(parseISO(p.startStr)), fridayOfWeek(parseISO(p.endStr)))) {
+      for (const { mon } of eachWeek(
+        mondayOfWeek(parseISO(p.startStr)),
+        fridayOfWeek(parseISO(p.endStr))
+      )) {
         for (let si = 0; si < slots.length; si++) {
           for (let i = 0; i < 5; i++) {
             const day = addDays(mon, i);
@@ -358,29 +376,50 @@ export default function ExamPlannerCSV() {
                   `${si + 1}`,
                   slots[si]?.start ?? "",
                   slots[si]?.end ?? "",
-                  s.codigo, s.siglas, s.nivel,
+                  s.codigo,
+                  s.siglas,
+                  s.nivel,
                   s.curs ?? "",
                   s.quad ?? "",
-                ].map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")
+                ]
+                  .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+                  .join(",")
               );
             });
           }
         }
       }
     }
-    const blob = new Blob([rows.join("\n")], { type:"text/csv;charset=utf-8" });
+    const blob = new Blob([rows.join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download="examenes.csv"; a.click();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "examenes.csv";
+    a.click();
     URL.revokeObjectURL(url);
   }
   function formatTxtLine(
-    label: string, dateStr: string, slotIdx: number, start: string, end: string, s: Subject
+    label: string,
+    dateStr: string,
+    slotIdx: number,
+    start: string,
+    end: string,
+    s: Subject
   ) {
-    const pad = (t: string, w: number) => (t || "").slice(0,w).padEnd(w," ");
+    const pad = (t: string, w: number) => (t || "").slice(0, w).padEnd(w, " ");
     return (
-      pad(label, 20) + pad(dateStr, 10) + pad(String(slotIdx), 2) +
-      pad(start, 5) + pad(end, 5) + pad(s.codigo, 12) + pad(s.siglas, 12) +
-      pad(s.nivel, 10) + pad(s.curs ?? "", 12) + pad(String(s.quad ?? ""), 1)
+      pad(label, 20) +
+      pad(dateStr, 10) +
+      pad(String(slotIdx), 2) +
+      pad(start, 5) +
+      pad(end, 5) +
+      pad(s.codigo, 12) +
+      pad(s.siglas, 12) +
+      pad(s.nivel, 10) +
+      pad(s.curs ?? "", 12) +
+      pad(String(s.quad ?? ""), 1)
     );
   }
   function exportTXT() {
@@ -390,7 +429,10 @@ export default function ExamPlannerCSV() {
       const slots = slotsPerPeriod[p.id] ?? [];
       const amap = assignedPerPeriod[p.id] ?? {};
       const label = `${p.tipus} ${p.any} Q${p.quad}`;
-      for (const { mon } of eachWeek(mondayOfWeek(parseISO(p.startStr)), fridayOfWeek(parseISO(p.endStr)))) {
+      for (const { mon } of eachWeek(
+        mondayOfWeek(parseISO(p.startStr)),
+        fridayOfWeek(parseISO(p.endStr))
+      )) {
         for (let si = 0; si < slots.length; si++) {
           for (let i = 0; i < 5; i++) {
             const day = addDays(mon, i);
@@ -402,16 +444,28 @@ export default function ExamPlannerCSV() {
               const subj = subjects.find((x) => x.id === id);
               if (!subj) return;
               lines.push(
-                formatTxtLine(label, format(day,"dd/MM/yyyy"), si+1, slots[si]?.start ?? "", slots[si]?.end ?? "", subj)
+                formatTxtLine(
+                  label,
+                  format(day, "dd/MM/yyyy"),
+                  si + 1,
+                  slots[si]?.start ?? "",
+                  slots[si]?.end ?? "",
+                  subj
+                )
               );
             });
           }
         }
       }
     }
-    const blob = new Blob([lines.join("\n")], { type:"text/plain;charset=utf-8" });
+    const blob = new Blob([lines.join("\n")], {
+      type: "text/plain;charset=utf-8",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href=url; a.download="examenes.txt"; a.click();
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "examenes.txt";
+    a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -423,8 +477,8 @@ export default function ExamPlannerCSV() {
     const parseDate = (raw: any): string | undefined => {
       if (!raw) return undefined;
       const s = String(raw).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;                 // yyyy-MM-dd
-      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);             // dd/MM/yyyy
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // yyyy-MM-dd
+      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); // dd/MM/yyyy
       if (m) return `${m[3]}-${m[2]}-${m[1]}`;
       return undefined;
     };
@@ -464,15 +518,20 @@ export default function ExamPlannerCSV() {
           for (const r of rows) {
             // Assignatura
             const codigo =
-              r.codigo || r.CODIGO || r.Codi || r["CODI UPC"] || r.codi || r.CODI;
+              r.codigo ?? r.CODIGO ?? r.Codi ?? r["CODI UPC"] ?? r.codi ?? r.CODI;
             const siglas =
-              r.siglas || r.SIGLAS || r.sigles || r["sigles"] || r.SIGLES;
+              r.siglas ?? r.SIGLAS ?? r.sigles ?? r["sigles"] ?? r.SIGLES;
             const nivel =
-              r.nivel || r.NIVEL || r.nivell || r.NIVELL || r.level || r.LEVEL;
+              r.nivel ?? r.NIVEL ?? r.nivell ?? r.NIVELL ?? r.level ?? r.LEVEL;
             const curs =
-              r.curs || r.curso || r.curso_academico || r.curs_academic || r.CURS || r.CURSO;
+              r.curs ??
+              r.curso ??
+              r.curso_academico ??
+              r.curs_academic ??
+              r.CURS ??
+              r.CURSO;
             const quad = normQuad(
-              r.quadrimestre || r.quad || r.quarter || r.Q || r.QUADRIMESTRE || r.QUAD
+              r.quadrimestre ?? r.quad ?? r.quarter ?? r.Q ?? r.QUADRIMESTRE ?? r.QUAD
             );
 
             if (codigo || siglas) {
@@ -493,31 +552,48 @@ export default function ExamPlannerCSV() {
             if (pid < 1 || pid > 5) continue;
 
             if (!periodMap.has(pid)) {
-              const tipus = (r.period_tipus || r.PERIOD_TIPUS || r.tipo || r.TIPO || "").toString().toUpperCase();
+              const tipusRaw = (
+                r.period_tipus ??
+                r.PERIOD_TIPUS ??
+                r.tipo ??
+                r.TIPO ??
+                ""
+              )
+                .toString()
+                .toUpperCase();
               const tipusNorm: TipusPeriode =
-                tipus === "FINAL" ? "FINAL" :
-                tipus === "REAVALUACIO" || tipus === "REAVALUACIÓ" || tipus === "REAVALUACION" ? "REAVALUACIÓ" :
-                "PARCIAL";
+                tipusRaw === "FINAL"
+                  ? "FINAL"
+                  : tipusRaw === "REAVALUACIO" ||
+                    tipusRaw === "REAVALUACIÓ" ||
+                    tipusRaw === "REAVALUACION"
+                  ? "REAVALUACIÓ"
+                  : "PARCIAL";
 
-              const anyNum = Number(r.period_any || r.PERIOD_ANY || r.year || r.ANY);
+              const anyNum = Number(
+                r.period_any ?? r.PERIOD_ANY ?? r.year ?? r.ANY
+              );
               const any =
                 Number.isFinite(anyNum) && anyNum >= 2025 && anyNum <= 2090
                   ? anyNum
                   : new Date().getFullYear();
 
-              const pquad = normQuad(r.period_quad ?? r.PERIOD_QUAD ?? r.quadrimestre ?? r.quad) || 1;
-
+              const pquad =
+                normQuad(
+                  r.period_quad ?? r.PERIOD_QUAD ?? r.quadrimestre ?? r.quad
+                ) || 1;
 
               const startStr =
-                parseDate(r.period_inici || r.PERIOD_INICI || r.start) ||
+                parseDate(r.period_inici ?? r.PERIOD_INICI ?? r.start) ||
                 format(mondayOfWeek(new Date()), "yyyy-MM-dd");
               const endStr =
-                parseDate(r.period_fi || r.PERIOD_FI || r.end) ||
+                parseDate(r.period_fi ?? r.PERIOD_FI ?? r.end) ||
                 format(fridayOfWeek(new Date()), "yyyy-MM-dd");
 
               const slots =
-                parseSlots(r.period_slots || r.PERIOD_SLOTS || r.slots) ||
-                [{ start: "08:00", end: "10:00" }];
+                parseSlots(r.period_slots ?? r.PERIOD_SLOTS ?? r.slots) || [
+                  { start: "08:00", end: "10:00" },
+                ];
 
               periodMap.set(pid, {
                 id: pid,
@@ -535,20 +611,23 @@ export default function ExamPlannerCSV() {
           const seen = new Set<string>();
           const uniqueSubjects = outSubjects.map((s) => {
             let id = s.id;
-            while (seen.has(id)) id = id + "-" + Math.random().toString(36).slice(2,5);
+            while (seen.has(id))
+              id = id + "-" + Math.random().toString(36).slice(2, 5);
             seen.add(id);
             return { ...s, id };
           });
           setSubjects(uniqueSubjects);
 
           if (periodMap.size > 0) {
-            const ordered = Array.from(periodMap.keys()).sort((a,b)=>a-b);
-            const list = ordered.map((k)=> periodMap.get(k)!);
+            const ordered = Array.from(periodMap.keys()).sort((a, b) => a - b);
+            const list = ordered.map((k) => periodMap.get(k)!);
             setPeriods(list);
             setSlotsPerPeriod(slotsMap);
             setAssignedPerPeriod({});
             setActivePid(list[0].id);
-            alert(`Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`);
+            alert(
+              `Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`
+            );
           } else {
             alert(`Importades ${uniqueSubjects.length} assignatures del CSV.`);
           }
@@ -560,7 +639,7 @@ export default function ExamPlannerCSV() {
       error: () => alert("No s'ha pogut llegir el fitxer CSV"),
     });
 
-    (e.currentTarget as HTMLInputElement).value = "";
+    (e.currentTarget as HTMLInputElement).value = ""; // permet reimportar el mateix fitxer
   };
 
   /* Render */
@@ -571,7 +650,7 @@ export default function ExamPlannerCSV() {
       </h1>
       <p className="text-sm mb-6">
         Pots definir els períodes i les franges manualment o importar-los
-        directament des del CSV (columnes period_*).
+        directament des del CSV (columnes <code>period_*</code>).
       </p>
 
       {/* Dades i intercanvi */}
@@ -588,12 +667,32 @@ export default function ExamPlannerCSV() {
             />
           </label>
 
-          <button onClick={exportCSV} className="px-3 py-2 border rounded-xl shadow-sm">Exportar CSV</button>
-          <button onClick={exportTXT} className="px-3 py-2 border rounded-xl shadow-sm">Exportar TXT</button>
-          <button onClick={exportJSON} className="px-3 py-2 border rounded-xl shadow-sm">Exportar JSON</button>
+          <button
+            onClick={exportCSV}
+            className="px-3 py-2 border rounded-xl shadow-sm"
+          >
+            Exportar CSV
+          </button>
+          <button
+            onClick={exportTXT}
+            className="px-3 py-2 border rounded-xl shadow-sm"
+          >
+            Exportar TXT
+          </button>
+          <button
+            onClick={exportJSON}
+            className="px-3 py-2 border rounded-xl shadow-sm"
+          >
+            Exportar JSON
+          </button>
           <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
             Importar JSON
-            <input type="file" accept="application/json" className="hidden" onChange={importJSON} />
+            <input
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={importJSON}
+            />
           </label>
 
           <span className="text-xs text-gray-500 ml-auto">
@@ -610,7 +709,9 @@ export default function ExamPlannerCSV() {
               key={p.id}
               onClick={() => setActivePid(p.id)}
               className={`px-3 py-2 rounded-xl border shadow-sm ${
-                p.id === activePid ? "bg-indigo-50 border-indigo-300" : "bg-white"
+                p.id === activePid
+                  ? "bg-indigo-50 border-indigo-300"
+                  : "bg-white"
               }`}
               title="Canviar de període"
             >
@@ -619,9 +720,17 @@ export default function ExamPlannerCSV() {
           ))}
         </div>
         <div className="flex gap-2">
-          <button onClick={addPeriod} className="px-3 py-2 border rounded-xl shadow-sm">Afegir període</button>
+          <button
+            onClick={addPeriod}
+            className="px-3 py-2 border rounded-xl shadow-sm"
+          >
+            Afegir període
+          </button>
           {periods.length > 1 && (
-            <button onClick={()=>removePeriod(activePid)} className="px-3 py-2 border rounded-xl shadow-sm">
+            <button
+              onClick={() => removePeriod(activePid)}
+              className="px-3 py-2 border rounded-xl shadow-sm"
+            >
               Eliminar període actiu
             </button>
           )}
@@ -639,7 +748,9 @@ export default function ExamPlannerCSV() {
               value={activePeriod.tipus}
               onChange={(e) => {
                 const v = e.target.value as TipusPeriode;
-                setPeriods(periods.map(p => p.id===activePid? {...p, tipus: v}: p));
+                setPeriods((arr) =>
+                  arr.map((p) => (p.id === activePid ? { ...p, tipus: v } : p))
+                );
               }}
               className="w-full border rounded-xl p-2"
             >
@@ -653,21 +764,29 @@ export default function ExamPlannerCSV() {
               value={activePeriod.any}
               onChange={(e) => {
                 const v = Number(e.target.value);
-                setPeriods(periods.map(p => p.id===activePid? {...p, any: v}: p));
+                setPeriods((arr) =>
+                  arr.map((p) => (p.id === activePid ? { ...p, any: v } : p))
+                );
               }}
               className="w-full border rounded-xl p-2"
             >
-              {Array.from({length: 2090-2025+1}, (_,i)=>2025+i).map(y=>(
-                <option key={y} value={y}>{y}</option>
-              ))}
+              {Array.from({ length: 2090 - 2025 + 1 }, (_, i) => 2025 + i).map(
+                (y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                )
+              )}
             </select>
 
             <label className="block text-sm mt-3 mb-1">Quadrimestre</label>
             <select
               value={activePeriod.quad}
               onChange={(e) => {
-                const v = Number(e.target.value) as 1|2;
-                setPeriods(periods.map(p => p.id===activePid? {...p, quad: v}: p));
+                const v = Number(e.target.value) as 1 | 2;
+                setPeriods((arr) =>
+                  arr.map((p) => (p.id === activePid ? { ...p, quad: v } : p))
+                );
                 setFilterQuad(v);
               }}
               className="w-full border rounded-xl p-2"
@@ -680,62 +799,80 @@ export default function ExamPlannerCSV() {
             <input
               type="date"
               value={activePeriod.startStr}
-              onChange={(e)=> setPeriods(periods.map(p => p.id===activePid? {...p, startStr: e.target.value}: p))}
+              onChange={(e) =>
+                setPeriods((arr) =>
+                  arr.map((p) =>
+                    p.id === activePid ? { ...p, startStr: e.target.value } : p
+                  )
+                )
+              }
               className="w-full border rounded-xl p-2"
             />
             <label className="block text-sm mt-3 mb-1">Fi</label>
             <input
               type="date"
               value={activePeriod.endStr}
-              onChange={(e)=> setPeriods(periods.map(p => p.id===activePid? {...p, endStr: e.target.value}: p))}
+              onChange={(e) =>
+                setPeriods((arr) =>
+                  arr.map((p) =>
+                    p.id === activePid ? { ...p, endStr: e.target.value } : p
+                  )
+                )
+              }
               className="w-full border rounded-xl p-2"
             />
           </div>
 
           <div className="p-4 rounded-2xl border shadow-sm bg-white md:col-span-2">
-            <h2 className="font-semibold mb-3">Franges horàries (per a aquest període)</h2>
+            <h2 className="font-semibold mb-3">
+              Franges horàries (per a aquest període)
+            </h2>
             <div className="space-y-2">
               {(slotsPerPeriod[activePid] ?? []).map((s, i) => (
                 <div key={i} className="flex items-center gap-2">
-                  <span className="text-sm w-6">{i+1}.</span>
+                  <span className="text-sm w-6">{i + 1}.</span>
                   <input
                     value={s.start}
-                    onChange={(e)=>{
-                      const v=e.target.value;
-                      setSlotsPerPeriod(sp => {
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSlotsPerPeriod((sp) => {
                         const arr = [...(sp[activePid] ?? [])];
-                        arr[i] = {...arr[i], start: v};
-                        return {...sp, [activePid]: arr};
+                        arr[i] = { ...arr[i], start: v };
+                        return { ...sp, [activePid]: arr };
                       });
                     }}
-                    className="border rounded-xl p-2 w-28" placeholder="HH:mm"
+                    className="border rounded-xl p-2 w-28"
+                    placeholder="HH:mm"
                   />
                   <span>–</span>
                   <input
                     value={s.end}
-                    onChange={(e)=>{
-                      const v=e.target.value;
-                      setSlotsPerPeriod(sp => {
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSlotsPerPeriod((sp) => {
                         const arr = [...(sp[activePid] ?? [])];
-                        arr[i] = {...arr[i], end: v};
-                        return {...sp, [activePid]: arr};
+                        arr[i] = { ...arr[i], end: v };
+                        return { ...sp, [activePid]: arr };
                       });
                     }}
-                    className="border rounded-xl p-2 w-28" placeholder="HH:mm"
+                    className="border rounded-xl p-2 w-28"
+                    placeholder="HH:mm"
                   />
                   <button
-                    onClick={()=>{
-                      setSlotsPerPeriod(sp=>{
-                        const arr=[...(sp[activePid]??[])].filter((_,idx)=> idx!==i);
-                        return {...sp, [activePid]: arr};
+                    onClick={() => {
+                      setSlotsPerPeriod((sp) => {
+                        const arr = [...(sp[activePid] ?? [])].filter(
+                          (_, idx) => idx !== i
+                        );
+                        return { ...sp, [activePid]: arr };
                       });
-                      setAssignedPerPeriod(ap=>{
-                        const amap = {...(ap[activePid] ?? {})};
+                      setAssignedPerPeriod((ap) => {
+                        const amap = { ...(ap[activePid] ?? {}) };
                         for (const k of Object.keys(amap)) {
                           const slotIdx = Number(k.split("|")[1]);
                           if (slotIdx === i) delete amap[k];
                         }
-                        return {...ap, [activePid]: amap};
+                        return { ...ap, [activePid]: amap };
                       });
                     }}
                     className="ml-2 text-xs px-2 py-1 border rounded-lg"
@@ -746,15 +883,18 @@ export default function ExamPlannerCSV() {
               ))}
             </div>
             <button
-              onClick={()=>{
-                setSlotsPerPeriod(sp=>{
+              onClick={() => {
+                setSlotsPerPeriod((sp) => {
                   const cur = sp[activePid] ?? [];
-                  const last = cur[cur.length-1];
-                  const nextStart = last? last.end : "08:00";
-                  const [h,m] = nextStart.split(":").map(Number);
-                  const endH = (h+2).toString().padStart(2,"0");
-                  const next = { start: nextStart, end: `${endH}:${(m||0).toString().padStart(2,"0")}` };
-                  return {...sp, [activePid]: [...cur, next]};
+                  const last = cur[cur.length - 1];
+                  const nextStart = last ? last.end : "08:00";
+                  const [h, m] = nextStart.split(":").map(Number);
+                  const endH = (h + 2).toString().padStart(2, "0");
+                  const next = {
+                    start: nextStart,
+                    end: `${endH}:${(m || 0).toString().padStart(2, "0")}`,
+                  };
+                  return { ...sp, [activePid]: [...cur, next] };
                 });
               }}
               className="mt-3 px-3 py-2 border rounded-xl shadow-sm"
@@ -765,7 +905,7 @@ export default function ExamPlannerCSV() {
         </div>
       )}
 
-      {/* DnD cobreix calaix + calendari */}
+      {/* DnD + calaix + calendari */}
       <DndContext onDragEnd={onDragEnd} modifiers={[restrictToWindowEdges]}>
         {/* Calaix d'assignatures (amb filtres) */}
         <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
@@ -776,11 +916,15 @@ export default function ExamPlannerCSV() {
               <label className="mr-2">Curs:</label>
               <select
                 value={filterCurs}
-                onChange={(e)=> setFilterCurs(e.target.value)}
+                onChange={(e) => setFilterCurs(e.target.value)}
                 className="border rounded-xl p-2"
               >
                 <option value="">(Tots)</option>
-                {allCursos.map(c => <option key={c} value={c}>{c}</option>)}
+                {allCursos.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -788,7 +932,9 @@ export default function ExamPlannerCSV() {
               <label className="mr-2">Quadrimestre:</label>
               <select
                 value={filterQuad}
-                onChange={(e)=> setFilterQuad(Number(e.target.value) as 0|1|2)}
+                onChange={(e) =>
+                  setFilterQuad(Number(e.target.value) as 0 | 1 | 2)
+                }
                 className="border rounded-xl p-2"
               >
                 <option value={0}>(Tots)</option>
@@ -798,7 +944,10 @@ export default function ExamPlannerCSV() {
             </div>
 
             <button
-              onClick={()=>{ setFilterCurs(""); setFilterQuad(0); }}
+              onClick={() => {
+                setFilterCurs("");
+                setFilterQuad(0);
+              }}
               className="text-sm px-3 py-2 border rounded-xl shadow-sm"
             >
               Neteja filtres
@@ -810,7 +959,9 @@ export default function ExamPlannerCSV() {
               <Chip
                 key={s.id}
                 id={s.id}
-                label={`${s.siglas} · ${s.codigo} · ${s.nivel}${s.curs ? " · " + s.curs : ""}${s.quad ? " · Q" + s.quad : ""}`}
+                label={`${s.siglas} · ${s.codigo} · ${s.nivel}${
+                  s.curs ? " · " + s.curs : ""
+                }${s.quad ? " · Q" + s.quad : ""}`}
               />
             ))}
             {availableSubjects.length === 0 && (
@@ -826,26 +977,42 @@ export default function ExamPlannerCSV() {
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
               <h3 className="text-lg font-semibold">
-                {activePeriod.tipus} {activePeriod.any} Q{activePeriod.quad} — {format(parseISO(activePeriod.startStr), "dd/MM")} a {format(parseISO(activePeriod.endStr), "dd/MM")}
+                {activePeriod.tipus} {activePeriod.any} Q{activePeriod.quad} —{" "}
+                {format(parseISO(activePeriod.startStr), "dd/MM")} a{" "}
+                {format(parseISO(activePeriod.endStr), "dd/MM")}
               </h3>
               <span className="text-sm text-gray-500">(dl–dv)</span>
             </div>
 
-            {[...eachWeek(mondayOfWeek(parseISO(activePeriod.startStr)), fridayOfWeek(parseISO(activePeriod.endStr)))].map(({mon, fri}, wIdx) => (
+            {[...eachWeek(
+              mondayOfWeek(parseISO(activePeriod.startStr)),
+              fridayOfWeek(parseISO(activePeriod.endStr))
+            )].map(({ mon, fri }, wIdx) => (
               <div key={wIdx} className="mt-6">
                 <div className="flex items-center gap-3 mb-2">
-                  <h4 className="font-semibold">Setmana {format(mon,"dd/MM")} — {format(fri,"dd/MM")}</h4>
+                  <h4 className="font-semibold">
+                    Setmana {format(mon, "dd/MM")} — {format(fri, "dd/MM")}
+                  </h4>
                   <span className="text-xs text-gray-500">(dl–dv)</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
                       <tr>
-                        <th className="border p-2 w-[160px] text-left">franja horària/Time slot</th>
-                        {Array.from({length:5}).map((_,i)=>(
-                          <th key={i} className="border p-2 min-w-[170px] text-left">
-                            <div className="font-semibold">{["Dl/Mon","Dt/Tu","Dc/Wed","Dj/Thu","Dv/Fri"][i]}</div>
-                            <div className="text-xs text-gray-500">{fmtDM(addDays(mon, i))}</div>
+                        <th className="border p-2 w-[160px] text-left">
+                          franja horària/Time slot
+                        </th>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <th
+                            key={i}
+                            className="border p-2 min-w-[170px] text-left"
+                          >
+                            <div className="font-semibold">
+                              {["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"][i]}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {fmtDM(addDays(mon, i))}
+                            </div>
                           </th>
                         ))}
                       </tr>
@@ -853,8 +1020,10 @@ export default function ExamPlannerCSV() {
                     <tbody>
                       {(slotsPerPeriod[activePid] ?? []).map((s, slotIndex) => (
                         <tr key={slotIndex}>
-                          <td className="border p-2 align-top font-medium whitespace-nowrap">{s.start}-{s.end}</td>
-                          {Array.from({length:5}).map((_,i)=>{
+                          <td className="border p-2 align-top font-medium whitespace-nowrap">
+                            {s.start}-{s.end}
+                          </td>
+                          {Array.from({ length: 5 }).map((_, i) => {
                             const day = addDays(mon, i);
                             const dateIso = format(day, "yyyy-MM-dd");
                             const disabled = isDisabledDay(day, activePeriod);
@@ -870,7 +1039,14 @@ export default function ExamPlannerCSV() {
                                 id={`cell:${activePid}:${dateIso}:${slotIndex}`}
                                 disabled={disabled}
                                 assignedList={assignedList}
-                                onRemoveOne={(subjectId)=> removeOneFromCell(activePid, dateIso, slotIndex, subjectId)}
+                                onRemoveOne={(subjectId) =>
+                                  removeOneFromCell(
+                                    activePid,
+                                    dateIso,
+                                    slotIndex,
+                                    subjectId
+                                  )
+                                }
                               />
                             );
                           })}
