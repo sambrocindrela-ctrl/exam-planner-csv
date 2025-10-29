@@ -49,9 +49,14 @@ interface Subject {
   id: string;
   codi: string;
   sigles: string;
-  nivell: string;
+  nivell?: string;          // ara pot ser buit
   curs?: string;            // any d’inici, ex. "2025"
   quadrimestre?: 1 | 2;
+  // Camps MastersTIC opcionals
+  MET?: string;
+  MATT?: string;
+  MEE?: string;
+  MCYBERS?: string;
 }
 interface TimeSlot { start: string; end: string; }
 interface PeriodMeta {
@@ -65,8 +70,22 @@ type AssignedMap = Record<string, string[]>;     // "YYYY-MM-DD|slotIndex" → [
 type AssignedPerPeriod = Record<number, AssignedMap>;
 type SlotsPerPeriod = Record<number, TimeSlot[]>;
 
+/* ---------- Tiny components ---------- */
+function MastersLines({ s }: { s: Subject }) {
+  // Mostra només els valors dels camps que tenen contingut, sense etiquetes.
+  const lines = [s.MET, s.MATT, s.MEE, s.MCYBERS]
+    .filter((v) => v && String(v).trim() !== "")
+    .map((v) => String(v).trim());
+  if (lines.length === 0) return null;
+  return (
+    <div className="text-xs opacity-80 leading-4 whitespace-pre-line">
+      {lines.join("\n")}
+    </div>
+  );
+}
+
 /* ---------- Draggable chip ---------- */
-function Chip({ id, label }: { id: string; label: string }) {
+function Chip({ id, s }: { id: string; s: Subject }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id });
   return (
@@ -74,17 +93,26 @@ function Chip({ id, label }: { id: string; label: string }) {
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`inline-flex items-center gap-2 px-3 py-2 rounded-2xl shadow-sm border text-sm cursor-grab active:cursor-grabbing select-none bg-white ${
+      className={`inline-flex flex-col px-3 py-2 rounded-2xl shadow-sm border text-sm cursor-grab active:cursor-grabbing select-none bg-white ${
         isDragging ? "opacity-70" : ""
       }`}
       style={{
         transform: transform
           ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
           : undefined,
+        maxWidth: 280,
       }}
-      title={label}
+      title={`${s.sigles} · ${s.codi}`}
     >
-      <span className="font-medium truncate max-w-[24ch]">{label}</span>
+      <span className="font-medium truncate">{s.sigles} · {s.codi}</span>
+      {s.nivell ? (
+        <span className="text-xs opacity-80 leading-4">Nivell: {s.nivell}</span>
+      ) : (
+        <MastersLines s={s} />
+      )}
+      <span className="text-[11px] opacity-60">
+        {s.curs ? ` ${s.curs}` : ""}{s.quadrimestre ? ` · Q${s.quadrimestre}` : ""}
+      </span>
     </div>
   );
 }
@@ -125,9 +153,13 @@ function DropCell({
               <div className="text-sm font-semibold leading-tight">
                 {s.sigles} · {s.codi}
               </div>
-              <div className="text-xs opacity-80">
-                Nivell: {s.nivell}
-                {s.curs ? ` · ${s.curs}` : ""}{s.quadrimestre ? ` · Q${s.quadrimestre}` : ""}
+              {s.nivell ? (
+                <div className="text-xs opacity-80">Nivell: {s.nivell}</div>
+              ) : (
+                <MastersLines s={s} />
+              )}
+              <div className="text-[11px] opacity-60">
+                {s.curs ? ` ${s.curs}` : ""}{s.quadrimestre ? ` · Q${s.quadrimestre}` : ""}
               </div>
               {!disabled && onRemoveOne && (
                 <button
@@ -158,7 +190,8 @@ export default function ExamPlannerCSV() {
     { id: "mat101", codi: "MAT101", sigles: "CALC I", nivell: "GRAU", curs:"2025", quadrimestre:1 },
     { id: "fis201", codi: "FIS201", sigles: "FIS II", nivell: "GRAU", curs:"2025", quadrimestre:1 },
     { id: "prg150", codi: "PRG150", sigles: "PRG", nivell: "GRAU", curs:"2025", quadrimestre:1 },
-    { id: "alg300", codi: "ALG300", sigles: "ALG", nivell: "MÀSTER", curs:"2025", quadrimestre:2 },
+    // Exemple MastersTIC sense nivell però amb camps extra:
+    { id: "tic500", codi: "TIC500", sigles: "CIBER", curs:"2025", quadrimestre:2, MCYBERS:"Sí", MET:"Optativa" },
   ]);
 
   /* Períodes */
@@ -233,7 +266,6 @@ export default function ExamPlannerCSV() {
       periods,
       slotsPerPeriod,
       assignedPerPeriod,
-      // si vols també filtres i pestanya activa, afegeix:
       activePid,
       filterCurs,
       filterQuad,
@@ -272,7 +304,6 @@ export default function ExamPlannerCSV() {
   function copyLinkToClipboard() {
     const url = new URL(window.location.href);
     if (!url.hash.includes("state=")) {
-      // per si l’usuari s’oblida de prémer “Guardar a l’enllaç” abans
       saveStateToUrl();
       return;
     }
@@ -282,7 +313,6 @@ export default function ExamPlannerCSV() {
       .catch(() => alert("No s’ha pogut copiar l’enllaç."));
   }
 
-  // Carrega automàticament des de l’enllaç (si n’hi ha) en muntar
   useEffect(() => {
     loadStateFromUrl();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -438,7 +468,7 @@ export default function ExamPlannerCSV() {
               const row = [
                 s.codi,
                 s.sigles,
-                s.nivell,
+                s.nivell ?? "",
                 s.curs ?? "",
                 s.quadrimestre ?? "",
                 String(p.id),
@@ -483,7 +513,7 @@ export default function ExamPlannerCSV() {
       pad(end, 5) +
       pad(s.codi, 12) +
       pad(s.sigles, 12) +
-      pad(s.nivell, 10) +
+      pad(s.nivell ?? "", 10) +
       pad(s.curs ?? "", 6) +
       pad(String(s.quadrimestre ?? ""), 1)
     );
@@ -535,7 +565,7 @@ export default function ExamPlannerCSV() {
     URL.revokeObjectURL(url);
   }
 
-  /* Import CSV (les teves capçaleres) */
+  /* Import CSV (capçaleres teves + camps MastersTIC opcionals) */
   const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -612,6 +642,11 @@ export default function ExamPlannerCSV() {
             const quadrimestre = normQuad(
               r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD
             );
+            // Camps MastersTIC opcionals
+            const MET = r.MET ?? r.met ?? r.Met;
+            const MATT = r.MATT ?? r.matt ?? r.Matt;
+            const MEE = r.MEE ?? r.mee ?? r.Mee;
+            const MCYBERS = r.MCYBERS ?? r.mcybers ?? r.Mcybers;
 
             if (codi || sigles) {
               const idBase = String(codi || sigles);
@@ -619,9 +654,13 @@ export default function ExamPlannerCSV() {
                 id: idBase,
                 codi: String(codi || ""),
                 sigles: String(sigles || ""),
-                nivell: String(nivell || ""),
+                nivell: nivell ? String(nivell) : undefined,
                 curs,
                 quadrimestre,
+                MET: MET ? String(MET) : undefined,
+                MATT: MATT ? String(MATT) : undefined,
+                MEE: MEE ? String(MEE) : undefined,
+                MCYBERS: MCYBERS ? String(MCYBERS) : undefined,
               });
             }
 
@@ -709,8 +748,8 @@ export default function ExamPlannerCSV() {
         Capçaleres esperades:{" "}
         <code>
           codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts
-        </code>{" "}
-        (el camp <b>curs</b> és l’any d’inici: 2025).
+        </code>
+        . Els camps opcionals **MastersTIC**: <code>MET,MATT,MEE,MCYBERS</code>.
       </p>
 
       {/* Dades i intercanvi */}
@@ -730,11 +769,14 @@ export default function ExamPlannerCSV() {
             <input type="file" accept="application/json" className="hidden" onChange={importJSON} />
           </label>
 
-          {/* Nous botons d’enllaç */}
+          {/* Enllaç */}
           <button onClick={saveStateToUrl} className="px-3 py-2 border rounded-xl shadow-sm">
             Guardar a l’enllaç
           </button>
-          <button onClick={()=>{ if (!loadStateFromUrl()) alert("No s’ha trobat cap estat a l’enllaç."); }} className="px-3 py-2 border rounded-xl shadow-sm">
+          <button
+            onClick={() => { if (!loadStateFromUrl()) alert("No s’ha trobat cap estat a l’enllaç."); }}
+            className="px-3 py-2 border rounded-xl shadow-sm"
+          >
             Carregar de l’enllaç
           </button>
           <button onClick={copyLinkToClipboard} className="px-3 py-2 border rounded-xl shadow-sm">
@@ -970,11 +1012,7 @@ export default function ExamPlannerCSV() {
 
           <div className="flex flex-wrap gap-2">
             {availableSubjects.map((s) => (
-              <Chip
-                key={s.id}
-                id={s.id}
-                label={`${s.sigles} · ${s.codi} · ${s.nivell}${s.curs ? " · " + s.curs : ""}${s.quadrimestre ? " · Q" + s.quadrimestre : ""}`}
-              />
+              <Chip key={s.id} id={s.id} s={s} />
             ))}
             {availableSubjects.length === 0 && (
               <div className="text-xs text-gray-500 italic">
@@ -1050,9 +1088,9 @@ export default function ExamPlannerCSV() {
 
       <div className="mt-8 text-xs text-gray-500">
         <ul className="list-disc ml-5 space-y-1">
-          <li>Fins a 5 períodes amb pestanyes; cada període té les seves franges, dates i dies no disponibles.</li>
-          <li>Importa CSV amb <code>codi,sigles,nivell,curs,quadrimestre</code> i bloc <code>period_*</code> per definir-ho tot d’un cop.</li>
-          <li>Nou: pots **guardar l’estat a l’enllaç** i **carregar-lo** després, o **copiar l’enllaç** per compartir-lo.</li>
+          <li>Fins a 5 períodes amb pestanyes; cada període té franges, dates i dies no disponibles.</li>
+          <li>CSV amb <code>codi,sigles,nivell,curs,quadrimestre</code> i bloc <code>period_*</code>; opcionalment <code>MET,MATT,MEE,MCYBERS</code> (si no hi ha <code>nivell</code>, es mostren en línies diferents).</li>
+          <li>Pots guardar l’estat a l’enllaç, carregar-lo i copiar l’enllaç per compartir.</li>
         </ul>
       </div>
     </div>
