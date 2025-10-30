@@ -12,6 +12,7 @@ import {
   parseISO,
 } from "date-fns";
 import * as Papa from "papaparse";
+import * as XLSX from "xlsx-js-style";
 import {
   compressToEncodedURIComponent,
   decompressFromEncodedURIComponent,
@@ -60,11 +61,12 @@ interface Subject {
 }
 interface TimeSlot { start: string; end: string; }
 interface PeriodMeta {
-  id: number;               // 1..5
+  id: number;
   tipus: TipusPeriode;
-  startStr: string;         // yyyy-MM-dd
-  endStr: string;           // yyyy-MM-dd
-  blackouts?: string[];     // llista de yyyy-MM-dd
+  startStr: string;
+  endStr: string;
+  blackouts?: string[];
+  quad?: 1 | 2;      // ← nou: quadrimestre del període
 }
 type AssignedMap = Record<string, string[]>;     // "YYYY-MM-DD|slotIndex" → [subjectId,...]
 type AssignedPerPeriod = Record<number, AssignedMap>;
@@ -110,12 +112,11 @@ function Chip({ id, s }: { id: string; s: Subject }) {
       ) : (
         <MastersLines s={s} />
       )}
-      <span className="text-[11px] opacity-60">
-        {s.curs ? ` ${s.curs}` : ""}{s.quadrimestre ? ` · Q${s.quadrimestre}` : ""}
-      </span>
+      {/* (treta la línia que mostrava curs/quadrimestre) */}
     </div>
   );
 }
+
 
 /* ---------- Droppable cell ---------- */
 function DropCell({
@@ -252,12 +253,15 @@ export default function ExamPlannerCSV() {
     return s;
   }, [assignedPerPeriod]);
 
-  const availableSubjects = useMemo(() => {
-    return subjects
-      .filter((s) => !usedIds.has(s.id))
-      .filter((s) => (filterCurs ? s.curs === filterCurs : true))
-      .filter((s) => (filterQuad ? s.quadrimestre === filterQuad : true));
-  }, [subjects, usedIds, filterCurs, filterQuad]);
+const availableSubjects = useMemo(() => {
+  const periodQuad = activePeriod?.quad; // 1|2|undefined
+  return subjects
+    .filter((s) => !usedIds.has(s.id))
+    .filter((s) => (filterCurs ? s.curs === filterCurs : true))
+    .filter((s) =>
+      periodQuad ? s.quadrimestre === periodQuad : (filterQuad ? s.quadrimestre === filterQuad : true)
+    );
+}, [subjects, usedIds, filterCurs, filterQuad, activePeriod]);
 
   /* ---------- Guardar/Carregar a l'enllaç ---------- */
   function saveStateToUrl() {
@@ -564,6 +568,162 @@ export default function ExamPlannerCSV() {
     a.click();
     URL.revokeObjectURL(url);
   }
+function formatSubjectForCell(s: {
+  sigles: string; codi: string; nivell?: string;
+  MET?: string; MATT?: string; MEE?: string; MCYBERS?: string;
+}) {
+  const header = `${s.sigles} · ${s.codi}`;
+  const mastersLines = [s.MET, s.MATT, s.MEE, s.MCYBERS]
+    .filter((v) => v && String(v).trim() !== "")
+    .map((v) => String(v).trim())
+    .join("\n");
+  const details = s.nivell ? `Nivell: ${s.nivell}` : mastersLines;
+  return details ? `${header}\n${details}` : header;
+}
+
+function exportExcel() {
+  // Un full per període; COLUMNS = dies (Dl..Dv), FILES = franges (com a l’app).
+  const wb = XLSX.utils.book_new();
+
+  // Paleta suau per colorejar les files segons la franja
+  const slotColors = ["#E3F2FD", "#E8F5E9", "#FFF3E0", "#F3E5F5", "#E0F7FA", "#FBE9E7"];
+
+  for (const p of periods) {
+    const slots = slotsPerPeriod[p.id] ?? [];
+    const amap = assignedPerPeriod[p.id] ?? {};
+
+    // Construirem la fulla afegint un bloc (capçalera + files) per CADA setmana del període
+    const allRows: any[][] = [];
+
+    // Per cada setmana dins del rang del període
+    for (const { mon, fri } of eachWeek(
+      mondayOfWeek(parseISO(p.startStr)),
+      fridayOfWeek(parseISO(p.endStr))
+    )) {
+      // ── Capçalera d’aquesta setmana: [Time slot, Dl, Dt, Dc, Dj, Dv] amb la data dd/MM
+      const dayHeaders = Array.from({ length: 5 }).map((_, i) => {
+        const d = addDays(mon, i);
+        return `${["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"][i]} ${format(d, "dd/MM")}`;
+      });
+      const header = ["franja horària/Time slot", ...dayHeaders];
+      const headerRowIndex = allRows.length; // guardem per a l’estil posterior
+      allRows.push(header);
+
+      // ── Files: una per franja; cel·les per dia amb la llista d’assignatures
+      for (let si = 0; si < slots.length; si++) {
+        const slot = slots[si];
+        const row: any[] = [`${slot.start}-${slot.end}`];
+
+        for (let i = 0; i < 5; i++) {
+          const day = addDays(mon, i);
+          const dateIso = format(day, "yyyy-MM-dd");
+          const disabled = isDisabledDay(day, p);
+          if (disabled) {
+            row.push(""); // dia fora de rang o blackout → buit
+            continue;
+          }
+          const key = `${dateIso}|${si}`;
+          const ids = amap[key] ?? [];
+          const list = ids
+            .map((id) => subjects.find((x) => x.id === id))
+            .filter(Boolean) as Subject[];
+const text = list.map((s) => formatSubjectForCell(s)).join("\n\n"); // línia en blanc entre assignatures
+row.push(text);
+        }
+        allRows.push(row);
+      }
+
+      // ── Fila buida com a separador entre setmanes (opcional)
+      allRows.push([]);
+    }
+
+    // Converteix a full
+    const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+    // Estils: capçaleres en negreta; files acolorides per franja (no per dia)
+    if (ws["!ref"]) {
+      const range = XLSX.utils.decode_range(ws["!ref"] as string);
+
+      // Recorrem totes les files; detectem capçaleres: són les que tenen text a A1 amb "franja"
+      for (let R = range.s.r; R <= range.e.r; R++) {
+        const firstCell = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
+        const firstVal = firstCell?.v as string | undefined;
+
+        // Fila de capçalera de setmana?
+        const isHeader =
+          typeof firstVal === "string" &&
+          firstVal.toLowerCase().includes("franja horària") ||
+          firstVal?.toLowerCase().includes("franja horaria") ||
+          firstVal?.toLowerCase().includes("time slot");
+
+        if (isHeader) {
+          // Posar negreta a tota la fila de capçalera
+          for (let C = 0; C <= range.e.c; C++) {
+            const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+            if (!cell) continue;
+            (cell as any).s = {
+              font: { bold: true },
+              alignment: { horizontal: C === 0 ? "left" : "center" },
+            };
+          }
+          continue;
+        }
+
+        // File de franja? (té a la primera columna "HH:mm-HH:mm")
+        const isSlotRow =
+          typeof firstVal === "string" && /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(firstVal);
+
+        if (isSlotRow) {
+          // Color de la fila segons índex de franja (si tenim múltiples setmanes, tornem a començar)
+          // Troba l'índex de franja a partir del text "HH:mm-HH:mm"
+          const slotIndexColor = (() => {
+            const idx = slots.findIndex((s) => `${s.start}-${s.end}` === firstVal);
+            return idx >= 0 ? idx : 0;
+          })();
+
+          const rgb = slotColors[slotIndexColor % slotColors.length].replace("#", "");
+
+          // Primera columna amb negreta; la resta amb wrap i fons
+          const first = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
+          if (first) (first as any).s = { font: { bold: true } };
+
+          for (let C = 1; C <= range.e.c; C++) {
+            const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+            if (!cell) continue;
+            (cell as any).s = {
+              alignment: { vertical: "top", wrapText: true },
+              fill: { fgColor: { rgb } },
+            };
+          }
+        }
+      }
+
+      // Amplades de columna: primera (time slot) més estreta; dies més amples
+      ws["!cols"] = [{ wch: 16 }]; // time slot
+      // Si coneixem el nombre de columnes, afegim amplades per a la resta
+      const totalCols = range.e.c + 1;
+      while ((ws["!cols"] as any[]).length < totalCols) (ws["!cols"] as any[]).push({ wch: 36 });
+
+      // Alçada de files: una mica més gran per veure múltiples línies
+      ws["!rows"] = allRows.map((row) => ({ hpt: row.length ? 42 : 10 }));
+    }
+
+    XLSX.utils.book_append_sheet(wb, ws, `${p.tipus}_id${p.id}`);
+  }
+
+  // Descarrega
+  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([wbout], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "calendari_examens.xlsx";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+
 
   /* Import CSV (capçaleres teves + camps MastersTIC opcionals) */
   const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
@@ -753,6 +913,10 @@ export default function ExamPlannerCSV() {
       </p>
 
       {/* Dades i intercanvi */}
+<button onClick={exportExcel} className="px-3 py-2 border rounded-xl shadow-sm">
+  Exportar Excel
+</button>
+
       <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
         <h2 className="font-semibold mb-3">Dades i intercanvi</h2>
         <div className="flex flex-wrap gap-3 items-center">
@@ -821,20 +985,40 @@ export default function ExamPlannerCSV() {
           <div className="p-4 rounded-2xl border shadow-sm bg-white">
             <h2 className="font-semibold mb-3">Configuració del període</h2>
 
-            <label className="block text-sm mb-1">Tipus</label>
-            <select
-              value={activePeriod.tipus}
-              onChange={(e) => {
-                const v = e.target.value as TipusPeriode;
-                setPeriods(arr => arr.map(p => p.id===activePid? {...p, tipus: v}: p));
-              }}
-              className="w-full border rounded-xl p-2"
-            >
-              <option>PARCIAL</option>
-              <option>FINAL</option>
-              <option>REAVALUACIÓ</option>
-            </select>
+<label className="block text-sm mb-1">Tipus</label>
+<select
+  value={activePeriod.tipus}
+  onChange={(e) => {
+    const v = e.target.value as TipusPeriode;
+    setPeriods(arr => arr.map(p => p.id === activePid ? { ...p, tipus: v } : p));
+  }}
+  className="w-full border rounded-xl p-2"
+>
+  <option>PARCIAL</option>
+  <option>FINAL</option>
+  <option>REAVALUACIÓ</option>
+</select>
 
+{/* 👇 Afegim aquí el selector de quadrimestre del període */}
+<label className="block text-sm mt-3 mb-1">Quadrimestre del període</label>
+<select
+  value={activePeriod.quad ?? 0}
+  onChange={(e) => {
+    const v = Number(e.target.value) as 0 | 1 | 2;
+    setPeriods(arr =>
+      arr.map(p =>
+        p.id === activePid
+          ? { ...p, quad: v === 1 || v === 2 ? (v as 1 | 2) : undefined }
+          : p
+      )
+    );
+  }}
+  className="w-full border rounded-xl p-2"
+>
+  <option value={0}>(No filtrar)</option>
+  <option value={1}>1</option>
+  <option value={2}>2</option>
+</select>
             <label className="block text-sm mt-3 mb-1">Inici</label>
             <input
               type="date"
