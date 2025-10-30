@@ -596,8 +596,8 @@ function exportExcel() {
     const allRows: any[][] = [];
 
     // Per cada setmana dins del rang del període
-    for (const { mon, fri } of eachWeek(
-      mondayOfWeek(parseISO(p.startStr)),
+for (const { mon } of eachWeek(
+         mondayOfWeek(parseISO(p.startStr)),
       fridayOfWeek(parseISO(p.endStr))
     )) {
       // ── Capçalera d’aquesta setmana: [Time slot, Dl, Dt, Dc, Dj, Dv] amb la data dd/MM
@@ -606,7 +606,6 @@ function exportExcel() {
         return `${["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"][i]} ${format(d, "dd/MM")}`;
       });
       const header = ["franja horària/Time slot", ...dayHeaders];
-      const headerRowIndex = allRows.length; // guardem per a l’estil posterior
       allRows.push(header);
 
       // ── Files: una per franja; cel·les per dia amb la llista d’assignatures
