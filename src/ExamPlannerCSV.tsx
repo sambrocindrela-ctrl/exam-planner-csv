@@ -458,11 +458,8 @@ function inferQuadFromDate(d: Date): 1 | 2 {
   return (m >= 9 || m === 1) ? 1 : 2;
 }
 
-// ⬇️ SUBSTITUEIX la teva exportCSV per aquesta
 function exportCSV() {
   const lines: string[] = [];
-  // Capçalera (amb coma final)
-  lines.push("CENTRE,CURS,QUADRIMESTRE,TIPUS_EXAMEN,DIA,HORA_INICI,HORA_FI,UNITAT_DOCENT,GRUP/S,");
 
   for (const p of periods) {
     const slots = slotsPerPeriod[p.id] ?? [];
@@ -474,7 +471,7 @@ function exportCSV() {
     )) {
       for (let i = 0; i < 5; i++) {
         const day = addDays(mon, i);
-        if (isDisabledDay(day, p)) continue; // fora de rang o blackout
+        if (isDisabledDay(day, p)) continue;
 
         const dateIso = format(day, "yyyy-MM-dd");
         for (let si = 0; si < slots.length; si++) {
@@ -489,26 +486,25 @@ function exportCSV() {
             const CENTRE = "230";
             const CURS = s.curs?.toString() ?? inferCursFromDate(day);
             const QUADRIMESTRE = (s.quadrimestre ?? p.quad ?? inferQuadFromDate(day)).toString();
-            const TIPUS_EXAMEN =
-              p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus; // sense accent
+            const TIPUS_EXAMEN = p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus;
             const DIA = format(day, "dd-MM-yyyy");
             const HORA_INICI = slots[si].start;
             const HORA_FI = slots[si].end;
             const UNITAT_DOCENT = s.codi;
             const GRUPS = ""; // buit
 
-            const row =
-              [
-                CENTRE,
-                CURS,
-                QUADRIMESTRE,
-                TIPUS_EXAMEN,
-                DIA,
-                HORA_INICI,
-                HORA_FI,
-                UNITAT_DOCENT,
-                GRUPS,
-              ].join(",") + ","; // coma final
+            // Una sola coma al final
+            const row = [
+              CENTRE,
+              CURS,
+              QUADRIMESTRE,
+              TIPUS_EXAMEN,
+              DIA,
+              HORA_INICI,
+              HORA_FI,
+              UNITAT_DOCENT,
+              GRUPS,
+            ].join(",");
 
             lines.push(row);
           }
@@ -525,6 +521,7 @@ function exportCSV() {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+
 
   function formatTxtLine(
     pLabel: string,
@@ -548,52 +545,89 @@ function exportCSV() {
       pad(String(s.quadrimestre ?? ""), 1)
     );
   }
-  function exportTXT() {
-    const lines: string[] = [];
-    lines.push("EXAMENS_EXPORT");
-    for (const p of periods) {
-      const slots = slotsPerPeriod[p.id] ?? [];
-      const amap = assignedPerPeriod[p.id] ?? {};
-      const pLabel = `${p.tipus} (id ${p.id})`;
-      for (const { mon } of eachWeek(
-        mondayOfWeek(parseISO(p.startStr)),
-        fridayOfWeek(parseISO(p.endStr))
-      )) {
+function exportTXT() {
+  // Longituds fixades
+  const LEN = {
+    CODI: 10,
+    CURS: 4,
+    QUAD: 1,
+    NOM: 120,
+    DIA: 10,
+    HORA: 5,
+    DESC: 2000, // perquè el total amb 6 espais sigui 2156
+  } as const;
+
+  const padText = (v: string, len: number) => {
+    const s = (v ?? "").toString();
+    return (s.length >= len) ? s.slice(0, len) : s + " ".repeat(len - s.length);
+  };
+  const padNum = (v: number | string, len: number) => {
+    const s = (v ?? "").toString();
+    return (s.length >= len) ? s.slice(0, len) : " ".repeat(len - s.length) + s;
+  };
+
+  const lines: string[] = [];
+
+  for (const p of periods) {
+    const slots = slotsPerPeriod[p.id] ?? [];
+    const amap = assignedPerPeriod[p.id] ?? {};
+
+    for (const { mon } of eachWeek(
+      mondayOfWeek(parseISO(p.startStr)),
+      fridayOfWeek(parseISO(p.endStr))
+    )) {
+      for (let i = 0; i < 5; i++) {
+        const day = addDays(mon, i);
+        if (isDisabledDay(day, p)) continue;
+
+        const dateIso = format(day, "yyyy-MM-dd");
         for (let si = 0; si < slots.length; si++) {
-          for (let i = 0; i < 5; i++) {
-            const day = addDays(mon, i);
-            if (isDisabledDay(day, p)) continue;
-            const dateIso = format(day, "yyyy-MM-dd");
-            const key = cellKey(dateIso, si);
-            const ids = amap[key] ?? [];
-            ids.forEach((id) => {
-              const subj = subjects.find((x) => x.id === id);
-              if (!subj) return;
-              lines.push(
-                formatTxtLine(
-                  pLabel,
-                  format(day, "dd/MM/yyyy"),
-                  si + 1,
-                  slots[si]?.start ?? "",
-                  slots[si]?.end ?? "",
-                  subj
-                )
-              );
-            });
+          const key = `${dateIso}|${si}`;
+          const ids = amap[key] ?? [];
+          if (!ids.length) continue;
+
+          for (const id of ids) {
+            const s = subjects.find((x) => x.id === id);
+            if (!s) continue;
+
+            const CODI = padText(s.codi, LEN.CODI);
+            const CURS = padNum(s.curs ?? inferCursFromDate(day), LEN.CURS);
+            const QUAD = padNum(s.quadrimestre ?? p.quad ?? inferQuadFromDate(day), LEN.QUAD);
+            const NOM = padText(s.sigles, LEN.NOM);
+            const DIA = padText(format(day, "dd-MM-yyyy"), LEN.DIA);
+            const HORA = padText((slots[si].start || "").replace(":", "-"), LEN.HORA);
+            const DESC = padText(p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus, LEN.DESC);
+
+            // 6 espais entre 7 camps, línia total = 2156
+            const line = [CODI, CURS, QUAD, NOM, DIA, HORA, DESC].join(" ");
+            // Sanity check opcional: if (line.length !== 2156) console.warn("Len:", line.length);
+            lines.push(line);
           }
         }
       }
     }
-    const blob = new Blob([lines.join("\n")], {
-      type: "text/plain;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "examenes.txt";
-    a.click();
-    URL.revokeObjectURL(url);
   }
+
+  const txt = lines.join("\n");
+  const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "examens_export.txt";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function inferCursFromDate(d: Date): string {
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  return (m >= 9 ? y : y - 1).toString(); // curs = any d'inici
+}
+function inferQuadFromDate(d: Date): 1 | 2 {
+  const m = d.getMonth() + 1;
+  return (m >= 9 || m === 1) ? 1 : 2;
+}
+
+
 function formatSubjectForCell(s: {
   sigles: string; codi: string; nivell?: string;
   MET?: string; MATT?: string; MEE?: string; MCYBERS?: string;
