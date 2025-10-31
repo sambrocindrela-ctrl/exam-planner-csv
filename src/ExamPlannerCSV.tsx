@@ -617,15 +617,6 @@ function exportTXT() {
   URL.revokeObjectURL(a.href);
 }
 
-function inferCursFromDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = d.getMonth() + 1;
-  return (m >= 9 ? y : y - 1).toString(); // curs = any d'inici
-}
-function inferQuadFromDate(d: Date): 1 | 2 {
-  const m = d.getMonth() + 1;
-  return (m >= 9 || m === 1) ? 1 : 2;
-}
 
 
 function formatSubjectForCell(s: {
