@@ -523,28 +523,6 @@ function exportCSV() {
 }
 
 
-  function formatTxtLine(
-    pLabel: string,
-    dateStr: string,
-    slotIdx: number,
-    start: string,
-    end: string,
-    s: Subject
-  ) {
-    const pad = (t: string, w: number) => (t || "").slice(0, w).padEnd(w, " ");
-    return (
-      pad(pLabel, 18) +
-      pad(dateStr, 10) +
-      pad(String(slotIdx), 2) +
-      pad(start, 5) +
-      pad(end, 5) +
-      pad(s.codi, 12) +
-      pad(s.sigles, 12) +
-      pad(s.nivell ?? "", 10) +
-      pad(s.curs ?? "", 6) +
-      pad(String(s.quadrimestre ?? ""), 1)
-    );
-  }
 function exportTXT() {
   // Longituds fixades
   const LEN = {
