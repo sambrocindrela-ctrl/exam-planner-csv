@@ -20,8 +20,8 @@ import {
 
 /* ---------- Helpers ---------- */
 function mondayOfWeek(d: Date) {
-  const day = d.getDay();
-  const diff = (day + 6) % 7;
+  const day = d.getDay();                // 0=dg … 6=ds
+  const diff = (day + 6) % 7;            // 0 si dilluns
   return startOfDay(subDays(d, diff));
 }
 function fridayOfWeek(d: Date) {
@@ -37,21 +37,29 @@ function* eachWeek(mondayStart: Date, fridayEnd: Date) {
     cur = addDays(mon, 7);
   }
 }
-function fmtDM(d: Date) {
-  return format(d, "dd/MM");
-}
-function iso(d: Date) {
-  return format(d, "yyyy-MM-dd");
+function fmtDM(d: Date) { return format(d, "dd/MM"); }
+function iso(d: Date) { return format(d, "yyyy-MM-dd"); }
+
+/* ---------- Tipus i models ---------- */
+type TipusPeriode = "PARCIAL" | "FINAL" | "REAVALUACIÓ";
+
+interface Period {
+  id: number;
+  label: string;
+  tipus: TipusPeriode;
+  startStr: string;   // "yyyy-MM-dd"
+  endStr: string;     // "yyyy-MM-dd"
+  curs?: number;      // any acadèmic (inici), ex. 2025
+  quad?: 1 | 2;       // quadrimestre del període
+  blackouts?: string[];
 }
 
-/* ---------- Types ---------- */
-type TipusPeriode = "PARCIAL" | "FINAL" | "REAVALUACIÓ";
 interface Subject {
   id: string;
   codi: string;
   sigles: string;
-  nivell?: string;          // ara pot ser buit
-  curs?: string;            // any d’inici, ex. "2025"
+  nivell?: string;
+  curs?: string;              // any inici com a text: "2025"
   quadrimestre?: 1 | 2;
   // Camps MastersTIC opcionals
   MET?: string;
@@ -59,26 +67,19 @@ interface Subject {
   MEE?: string;
   MCYBERS?: string;
 }
-interface TimeSlot { start: string; end: string; }
-interface PeriodMeta {
-  id: number;
-  tipus: TipusPeriode;
-  startStr: string;
-  endStr: string;
-  blackouts?: string[];
-  quad?: 1 | 2;      // ← nou: quadrimestre del període
-}
+
+interface TimeSlot { start: string; end: string; } // "HH:mm"
+
 type AssignedMap = Record<string, string[]>;     // "YYYY-MM-DD|slotIndex" → [subjectId,...]
 type AssignedPerPeriod = Record<number, AssignedMap>;
 type SlotsPerPeriod = Record<number, TimeSlot[]>;
 
-/* ---------- Tiny components ---------- */
+/* ---------- Subcomponents ---------- */
 function MastersLines({ s }: { s: Subject }) {
-  // Mostra només els valors dels camps que tenen contingut, sense etiquetes.
   const lines = [s.MET, s.MATT, s.MEE, s.MCYBERS]
     .filter((v) => v && String(v).trim() !== "")
     .map((v) => String(v).trim());
-  if (lines.length === 0) return null;
+  if (!lines.length) return null;
   return (
     <div className="text-xs opacity-80 leading-4 whitespace-pre-line">
       {lines.join("\n")}
@@ -86,7 +87,6 @@ function MastersLines({ s }: { s: Subject }) {
   );
 }
 
-/* ---------- Draggable chip ---------- */
 function Chip({ id, s }: { id: string; s: Subject }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id });
@@ -112,13 +112,10 @@ function Chip({ id, s }: { id: string; s: Subject }) {
       ) : (
         <MastersLines s={s} />
       )}
-      {/* (treta la línia que mostrava curs/quadrimestre) */}
     </div>
   );
 }
 
-
-/* ---------- Droppable cell ---------- */
 function DropCell({
   id,
   disabled,
@@ -135,21 +132,17 @@ function DropCell({
     <td
       ref={setNodeRef}
       className={`align-top min-w-[170px] h-20 p-2 border ${
-        disabled
-          ? "bg-gray-100 text-gray-400"
-          : isOver
-          ? "ring-2 ring-indigo-400"
-          : "bg-white"
+        disabled ? "bg-gray-100 text-gray-400"
+                 : isOver ? "ring-2 ring-indigo-400"
+                          : "bg-white"
       }`}
     >
-      {assignedList && assignedList.length > 0 ? (
+      {assignedList && assignedList.length ? (
         <div className="space-y-2">
           {assignedList.map((s) => (
             <div
               key={s.id}
-              className={`relative p-2 rounded-xl border shadow-sm ${
-                disabled ? "opacity-60" : "bg-gray-50"
-              }`}
+              className={`relative p-2 rounded-xl border shadow-sm ${disabled ? "opacity-60" : "bg-gray-50"}`}
             >
               <div className="text-sm font-semibold leading-tight">
                 {s.sigles} · {s.codi}
@@ -159,9 +152,6 @@ function DropCell({
               ) : (
                 <MastersLines s={s} />
               )}
-              <div className="text-[11px] opacity-60">
-                {s.curs ? ` ${s.curs}` : ""}{s.quadrimestre ? ` · Q${s.quadrimestre}` : ""}
-              </div>
               {!disabled && onRemoveOne && (
                 <button
                   onClick={() => onRemoveOne(s.id)}
@@ -184,27 +174,27 @@ function DropCell({
   );
 }
 
-/* ---------- Main ---------- */
+/* ---------- Component principal ---------- */
 export default function ExamPlannerCSV() {
-  /* Subjects */
+  /* Assignatures (demo inicial – es sobreescriuran amb CSV/JSON) */
   const [subjects, setSubjects] = useState<Subject[]>([
-    { id: "mat101", codi: "MAT101", sigles: "CALC I", nivell: "GRAU", curs:"2025", quadrimestre:1 },
-    { id: "fis201", codi: "FIS201", sigles: "FIS II", nivell: "GRAU", curs:"2025", quadrimestre:1 },
-    { id: "prg150", codi: "PRG150", sigles: "PRG", nivell: "GRAU", curs:"2025", quadrimestre:1 },
-    // Exemple MastersTIC sense nivell però amb camps extra:
-    { id: "tic500", codi: "TIC500", sigles: "CIBER", curs:"2025", quadrimestre:2, MCYBERS:"Sí", MET:"Optativa" },
+    { id: "mat101", codi: "MAT101", sigles: "CALC I", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "fis201", codi: "FIS201", sigles: "FIS II", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "prg150", codi: "PRG150", sigles: "PRG", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "tic500", codi: "TIC500", sigles: "CIBER", curs: "2025", quadrimestre: 2, MCYBERS: "Sí", MET: "Optativa" },
   ]);
 
-  /* Períodes */
-  const [periods, setPeriods] = useState<PeriodMeta[]>([
-    {
-      id: 1,
-      tipus: "PARCIAL",
-      startStr: format(mondayOfWeek(new Date()), "yyyy-MM-dd"),
-      endStr: format(fridayOfWeek(new Date()), "yyyy-MM-dd"),
-      blackouts: [],
-    },
-  ]);
+  /* Períodes (amb curs/quad propis) */
+  const [periods, setPeriods] = useState<Period[]>([{
+    id: 1,
+    label: "Període 1",
+    tipus: "PARCIAL",
+    startStr: format(mondayOfWeek(new Date()), "yyyy-MM-dd"),
+    endStr: format(fridayOfWeek(new Date()), "yyyy-MM-dd"),
+    curs: undefined,
+    quad: undefined,
+    blackouts: [],
+  }]);
   const [activePid, setActivePid] = useState<number>(1);
 
   /* Franges per període */
@@ -219,76 +209,53 @@ export default function ExamPlannerCSV() {
   /* Assignacions per període */
   const [assignedPerPeriod, setAssignedPerPeriod] = useState<AssignedPerPeriod>({});
 
-  /* Filtres calaix */
-  const [filterCurs, setFilterCurs] = useState<string | "">("");
-  const [filterQuad, setFilterQuad] = useState<0 | 1 | 2>(0);
-
   const activePeriod = periods.find((p) => p.id === activePid)!;
 
-  function isDisabledDay(d: Date, p: PeriodMeta) {
+  function isDisabledDay(d: Date, p: Period) {
     const sd = parseISO(p.startStr);
     const ed = parseISO(p.endStr);
     const outside = isBefore(d, sd) || isAfter(d, ed);
     if (outside) return true;
     const bl = p.blackouts ?? [];
-    const dIso = iso(d);
-    return bl.includes(dIso);
+    return bl.includes(iso(d));
   }
   function cellKey(dateIso: string, slotIndex: number) {
     return `${dateIso}|${slotIndex}`;
   }
 
-  const allCursos = useMemo(
-    () => Array.from(new Set(subjects.map((s) => s.curs).filter(Boolean))) as string[],
-    [subjects]
-  );
-
+  /* Assignatures ja utilitzades a qualsevol període */
   const usedIds = useMemo(() => {
     const s = new Set<string>();
     for (const amap of Object.values(assignedPerPeriod)) {
-      for (const list of Object.values(amap)) {
-        for (const id of list) s.add(id);
-      }
+      for (const list of Object.values(amap)) for (const id of list) s.add(id);
     }
     return s;
   }, [assignedPerPeriod]);
 
-const availableSubjects = useMemo(() => {
-  const periodQuad = activePeriod?.quad; // 1|2|undefined
-  return subjects
-    .filter((s) => !usedIds.has(s.id))
-    .filter((s) => (filterCurs ? s.curs === filterCurs : true))
-    .filter((s) =>
-      periodQuad ? s.quadrimestre === periodQuad : (filterQuad ? s.quadrimestre === filterQuad : true)
-    );
-}, [subjects, usedIds, filterCurs, filterQuad, activePeriod]);
+  /* Filtrat automàtic segons curs/quad del període actiu */
+  const availableSubjects = useMemo(() => {
+    const pcurs = activePeriod?.curs != null ? String(activePeriod.curs) : undefined;
+    const pquad = activePeriod?.quad;
+    return subjects
+      .filter((s) => !usedIds.has(s.id))
+      .filter((s) => (pcurs ? s.curs === pcurs : true))
+      .filter((s) => (pquad ? s.quadrimestre === pquad : true));
+  }, [subjects, usedIds, activePeriod?.curs, activePeriod?.quad]);
 
-  /* ---------- Guardar/Carregar a l'enllaç ---------- */
+  /* Guardar/Carregar estat a URL (hash) */
   function saveStateToUrl() {
-    const payload = {
-      subjects,
-      periods,
-      slotsPerPeriod,
-      assignedPerPeriod,
-      activePid,
-      filterCurs,
-      filterQuad,
-    };
-    const json = JSON.stringify(payload);
-    const packed = compressToEncodedURIComponent(json);
+    const payload = { subjects, periods, slotsPerPeriod, assignedPerPeriod, activePid };
+    const packed = compressToEncodedURIComponent(JSON.stringify(payload));
     const url = new URL(window.location.href);
     url.hash = `state=${packed}`;
     history.replaceState(null, "", url.toString());
     alert("Estat guardat a l’enllaç!");
   }
-
   function loadStateFromUrl(): boolean {
-    const hash = window.location.hash || "";
-    const m = hash.match(/[#&]state=([^&]+)/);
+    const m = (window.location.hash || "").match(/[#&]state=([^&]+)/);
     if (!m) return false;
-    const packed = m[1];
     try {
-      const json = decompressFromEncodedURIComponent(packed);
+      const json = decompressFromEncodedURIComponent(m[1]);
       if (!json) return false;
       const data = JSON.parse(json);
       if (Array.isArray(data.subjects)) setSubjects(data.subjects);
@@ -296,39 +263,25 @@ const availableSubjects = useMemo(() => {
       if (data.slotsPerPeriod) setSlotsPerPeriod(data.slotsPerPeriod);
       if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
       if (typeof data.activePid === "number") setActivePid(data.activePid);
-      if (typeof data.filterCurs === "string") setFilterCurs(data.filterCurs);
-      if (data.filterQuad === 0 || data.filterQuad === 1 || data.filterQuad === 2)
-        setFilterQuad(data.filterQuad);
       return true;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   }
-
   function copyLinkToClipboard() {
-    const url = new URL(window.location.href);
-    if (!url.hash.includes("state=")) {
+    if (!window.location.hash.includes("state=")) {
       saveStateToUrl();
       return;
     }
-    navigator.clipboard
-      .writeText(url.toString())
+    navigator.clipboard.writeText(window.location.href)
       .then(() => alert("Enllaç copiat!"))
       .catch(() => alert("No s’ha pogut copiar l’enllaç."));
   }
+  useEffect(() => { loadStateFromUrl(); /* un sol cop */ }, []);
 
-  useEffect(() => {
-    loadStateFromUrl();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  /* Drag & drop */
+  /* DnD */
   function onDragEnd(e: any) {
     const subjectId = e.active?.id as string;
     const dropId = e.over?.id as string | undefined;
-    if (!dropId) return;
-    if (!dropId.startsWith("cell:")) return;
-
+    if (!dropId || !dropId.startsWith("cell:")) return;
     // id = cell:periodId:YYYY-MM-DD:slotIndex
     const [, pidStr, dateIso, slotIndexStr] = dropId.split(":");
     const pid = Number(pidStr);
@@ -342,88 +295,65 @@ const availableSubjects = useMemo(() => {
       alert("Aquesta assignatura ja està programada al calendari.");
       return;
     }
-
     const key = cellKey(dateIso, Number(slotIndexStr));
     setAssignedPerPeriod((prev) => {
       const prevMap = prev[pid] ?? {};
-      const list = prevMap[key] ?? [];
-      if (list.includes(subjectId)) return prev;
-      const nextMap: AssignedMap = { ...prevMap, [key]: [...list, subjectId] };
-      return { ...prev, [pid]: nextMap };
+      const nextList = (prevMap[key] ?? []).includes(subjectId)
+        ? prevMap[key]!
+        : [...(prevMap[key] ?? []), subjectId];
+      return { ...prev, [pid]: { ...prevMap, [key]: nextList } };
     });
   }
-
-  function removeOneFromCell(
-    pid: number,
-    dateIso: string,
-    slotIndex: number,
-    subjectId: string
-  ) {
+  function removeOneFromCell(pid: number, dateIso: string, slotIndex: number, subjectId: string) {
     const key = cellKey(dateIso, slotIndex);
     setAssignedPerPeriod((prev) => {
       const prevMap = prev[pid] ?? {};
-      const list = prevMap[key] ?? [];
-      const next = list.filter((id) => id !== subjectId);
+      const next = (prevMap[key] ?? []).filter((id) => id !== subjectId);
       const copy: AssignedMap = { ...prevMap };
-      if (next.length === 0) delete copy[key];
-      else copy[key] = next;
+      if (next.length) copy[key] = next; else delete copy[key];
       return { ...prev, [pid]: copy };
     });
   }
 
   /* Gestió períodes */
   function addPeriod() {
-    if (periods.length >= 5) {
-      alert("Pots tenir com a màxim 5 períodes.");
-      return;
-    }
+    if (periods.length >= 5) { alert("Pots tenir com a màxim 5 períodes."); return; }
     const newId = Math.max(0, ...periods.map((p) => p.id)) + 1;
     const today = new Date();
-    const meta: PeriodMeta = {
+    const newPeriod: Period = {
       id: newId,
+      label: `Període ${newId}`,
       tipus: "PARCIAL",
       startStr: format(mondayOfWeek(today), "yyyy-MM-dd"),
       endStr: format(fridayOfWeek(today), "yyyy-MM-dd"),
+      curs: undefined,
+      quad: undefined,
       blackouts: [],
     };
-    setPeriods([...periods, meta]);
-    setSlotsPerPeriod((sp) => ({
-      ...sp,
-      [newId]: [{ start: "08:00", end: "10:00" }],
-    }));
+    setPeriods([...periods, newPeriod]);
+    setSlotsPerPeriod((sp) => ({ ...sp, [newId]: [{ start: "08:00", end: "10:00" }] }));
     setActivePid(newId);
   }
   function removePeriod(id: number) {
     if (!confirm("Segur que vols eliminar aquest període?")) return;
     setPeriods(periods.filter((p) => p.id !== id));
-    setAssignedPerPeriod((ap) => {
-      const c = { ...ap };
-      delete c[id];
-      return c;
-    });
-    setSlotsPerPeriod((sp) => {
-      const c = { ...sp };
-      delete c[id];
-      return c;
-    });
-    if (activePid === id && periods.length > 1) {
+    setAssignedPerPeriod((ap) => { const c = { ...ap }; delete c[id]; return c; });
+    setSlotsPerPeriod((sp) => { const c = { ...sp }; delete c[id]; return c; });
+    if (activePid === id) {
       const rest = periods.filter((p) => p.id !== id);
-      setActivePid(rest[0].id);
+      if (rest.length) setActivePid(rest[0].id);
     }
   }
 
-  /* Exportacions (CSV/TXT/JSON) */
+  /* Exportacions */
   function exportJSON() {
     const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects };
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
-    a.href = url;
+    a.href = URL.createObjectURL(blob);
     a.download = "planificador-examens.json";
     a.click();
-    URL.revokeObjectURL(url);
+    URL.revokeObjectURL(a.href);
   }
   function importJSON(ev: React.ChangeEvent<HTMLInputElement>) {
     const f = ev.target.files?.[0];
@@ -436,515 +366,404 @@ const availableSubjects = useMemo(() => {
         if (data.slotsPerPeriod) setSlotsPerPeriod(data.slotsPerPeriod);
         if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
         if (Array.isArray(data.subjects)) setSubjects(data.subjects);
-        if (Array.isArray(data.periods) && data.periods.length)
-          setActivePid(data.periods[0].id);
-      } catch {
-        alert("JSON no vàlid");
-      }
+        if (Array.isArray(data.periods) && data.periods.length) setActivePid(data.periods[0].id);
+      } catch { alert("JSON no vàlid"); }
     };
     reader.readAsText(f);
     ev.currentTarget.value = "";
   }
-  // Helpers per inferir curs/quadrimestre quan no vénen al CSV
-function inferCursFromDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = d.getMonth() + 1; // 1..12
-  // curs acadèmic com a any d'inici: si és set.–des. → any; si és gen.–ago. → any-1
-  return (m >= 9 ? y : y - 1).toString();
-}
-function inferQuadFromDate(d: Date): 1 | 2 {
-  const m = d.getMonth() + 1;
-  // set.–gen. → Q1 ; feb.–jul. → Q2 (agost el col·loquem a Q2 per seguretat)
-  return (m >= 9 || m === 1) ? 1 : 2;
-}
 
-function exportCSV() {
-  const lines: string[] = [];
-
-  for (const p of periods) {
-    const slots = slotsPerPeriod[p.id] ?? [];
-    const amap = assignedPerPeriod[p.id] ?? {};
-
-    for (const { mon } of eachWeek(
-      mondayOfWeek(parseISO(p.startStr)),
-      fridayOfWeek(parseISO(p.endStr))
-    )) {
-      for (let i = 0; i < 5; i++) {
-        const day = addDays(mon, i);
-        if (isDisabledDay(day, p)) continue;
-
-        const dateIso = format(day, "yyyy-MM-dd");
-        for (let si = 0; si < slots.length; si++) {
-          const key = `${dateIso}|${si}`;
-          const ids = amap[key] ?? [];
-          if (!ids.length) continue;
-
-          for (const id of ids) {
-            const s = subjects.find((x) => x.id === id);
-            if (!s) continue;
-
-            const CENTRE = "230";
-            const CURS = s.curs?.toString() ?? inferCursFromDate(day);
-            const QUADRIMESTRE = (s.quadrimestre ?? p.quad ?? inferQuadFromDate(day)).toString();
-            const TIPUS_EXAMEN = p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus;
-            const DIA = format(day, "dd-MM-yyyy");
-            const HORA_INICI = slots[si].start;
-            const HORA_FI = slots[si].end;
-            const UNITAT_DOCENT = s.codi;
-            const GRUPS = ""; // buit
-
-            // Una sola coma al final
-            const row = [
-              CENTRE,
-              CURS,
-              QUADRIMESTRE,
-              TIPUS_EXAMEN,
-              DIA,
-              HORA_INICI,
-              HORA_FI,
-              UNITAT_DOCENT,
-              GRUPS,
-            ].join(",");
-
-            lines.push(row);
-          }
-        }
-      }
-    }
+  // Inferència (per si falta curs/quad a alguna assignatura puntual)
+  function inferCursFromDate(d: Date): string {
+    const y = d.getFullYear(), m = d.getMonth() + 1;
+    return (m >= 9 ? y : y - 1).toString();  // curs = any d'inici
+  }
+  function inferQuadFromDate(d: Date): 1 | 2 {
+    const m = d.getMonth() + 1;
+    return (m >= 9 || m === 1) ? 1 : 2;       // set–gen: Q1; feb–jul: Q2
   }
 
-  const csv = lines.join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "examens_export.csv";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-
-function exportTXT() {
-  // Longituds fixades
-  const LEN = {
-    CODI: 10,
-    CURS: 4,
-    QUAD: 1,
-    NOM: 120,
-    DIA: 10,
-    HORA: 5,
-    DESC: 2000, // perquè el total amb 6 espais sigui 2156
-  } as const;
-
-  const padText = (v: string, len: number) => {
-    const s = (v ?? "").toString();
-    return (s.length >= len) ? s.slice(0, len) : s + " ".repeat(len - s.length);
-  };
-  const padNum = (v: number | string, len: number) => {
-    const s = (v ?? "").toString();
-    return (s.length >= len) ? s.slice(0, len) : " ".repeat(len - s.length) + s;
-  };
-
-  const lines: string[] = [];
-
-  for (const p of periods) {
-    const slots = slotsPerPeriod[p.id] ?? [];
-    const amap = assignedPerPeriod[p.id] ?? {};
-
-    for (const { mon } of eachWeek(
-      mondayOfWeek(parseISO(p.startStr)),
-      fridayOfWeek(parseISO(p.endStr))
-    )) {
-      for (let i = 0; i < 5; i++) {
-        const day = addDays(mon, i);
-        if (isDisabledDay(day, p)) continue;
-
-        const dateIso = format(day, "yyyy-MM-dd");
-        for (let si = 0; si < slots.length; si++) {
-          const key = `${dateIso}|${si}`;
-          const ids = amap[key] ?? [];
-          if (!ids.length) continue;
-
-          for (const id of ids) {
-            const s = subjects.find((x) => x.id === id);
-            if (!s) continue;
-
-            const CODI = padText(s.codi, LEN.CODI);
-            const CURS = padNum(s.curs ?? inferCursFromDate(day), LEN.CURS);
-            const QUAD = padNum(s.quadrimestre ?? p.quad ?? inferQuadFromDate(day), LEN.QUAD);
-            const NOM = padText(s.sigles, LEN.NOM);
-            const DIA = padText(format(day, "dd-MM-yyyy"), LEN.DIA);
-            const HORA = padText((slots[si].start || "").replace(":", "-"), LEN.HORA);
-            const DESC = padText(p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus, LEN.DESC);
-
-            // 6 espais entre 7 camps, línia total = 2156
-            const line = [CODI, CURS, QUAD, NOM, DIA, HORA, DESC].join(" ");
-            // Sanity check opcional: if (line.length !== 2156) console.warn("Len:", line.length);
-            lines.push(line);
-          }
-        }
-      }
-    }
-  }
-
-  const txt = lines.join("\n");
-  const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "examens_export.txt";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-
-
-
-function formatSubjectForCell(s: {
-  sigles: string; codi: string; nivell?: string;
-  MET?: string; MATT?: string; MEE?: string; MCYBERS?: string;
-}) {
-  const header = `${s.sigles} · ${s.codi}`;
-  const mastersLines = [s.MET, s.MATT, s.MEE, s.MCYBERS]
-    .filter((v) => v && String(v).trim() !== "")
-    .map((v) => String(v).trim())
-    .join("\n");
-  const details = s.nivell ? `Nivell: ${s.nivell}` : mastersLines;
-  return details ? `${header}\n${details}` : header;
-}
-
-function exportExcel() {
-  // Un full per període; COLUMNS = dies (Dl..Dv), FILES = franges (com a l’app).
-  const wb = XLSX.utils.book_new();
-
-  // Paleta suau per colorejar les files segons la franja
-  const slotColors = ["#E3F2FD", "#E8F5E9", "#FFF3E0", "#F3E5F5", "#E0F7FA", "#FBE9E7"];
-
-  for (const p of periods) {
-    const slots = slotsPerPeriod[p.id] ?? [];
-    const amap = assignedPerPeriod[p.id] ?? {};
-
-    // Construirem la fulla afegint un bloc (capçalera + files) per CADA setmana del període
-    const allRows: any[][] = [];
-
-    // Per cada setmana dins del rang del període
-for (const { mon } of eachWeek(
-         mondayOfWeek(parseISO(p.startStr)),
-      fridayOfWeek(parseISO(p.endStr))
-    )) {
-      // ── Capçalera d’aquesta setmana: [Time slot, Dl, Dt, Dc, Dj, Dv] amb la data dd/MM
-      const dayHeaders = Array.from({ length: 5 }).map((_, i) => {
-        const d = addDays(mon, i);
-        return `${["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"][i]} ${format(d, "dd/MM")}`;
-      });
-      const header = ["franja horària/Time slot", ...dayHeaders];
-      allRows.push(header);
-
-      // ── Files: una per franja; cel·les per dia amb la llista d’assignatures
-      for (let si = 0; si < slots.length; si++) {
-        const slot = slots[si];
-        const row: any[] = [`${slot.start}-${slot.end}`];
-
+  function exportCSV() {
+    const lines: string[] = [];
+    for (const p of periods) {
+      const slots = slotsPerPeriod[p.id] ?? [];
+      const amap = assignedPerPeriod[p.id] ?? {};
+      for (const { mon } of eachWeek(mondayOfWeek(parseISO(p.startStr)), fridayOfWeek(parseISO(p.endStr)))) {
         for (let i = 0; i < 5; i++) {
           const day = addDays(mon, i);
-          const dateIso = format(day, "yyyy-MM-dd");
-          const disabled = isDisabledDay(day, p);
-          if (disabled) {
-            row.push(""); // dia fora de rang o blackout → buit
-            continue;
-          }
-          const key = `${dateIso}|${si}`;
-          const ids = amap[key] ?? [];
-          const list = ids
-            .map((id) => subjects.find((x) => x.id === id))
-            .filter(Boolean) as Subject[];
-const text = list.map((s) => formatSubjectForCell(s)).join("\n\n"); // línia en blanc entre assignatures
-row.push(text);
-        }
-        allRows.push(row);
-      }
-
-      // ── Fila buida com a separador entre setmanes (opcional)
-      allRows.push([]);
-    }
-
-    // Converteix a full
-    const ws = XLSX.utils.aoa_to_sheet(allRows);
-
-    // Estils: capçaleres en negreta; files acolorides per franja (no per dia)
-    if (ws["!ref"]) {
-      const range = XLSX.utils.decode_range(ws["!ref"] as string);
-
-      // Recorrem totes les files; detectem capçaleres: són les que tenen text a A1 amb "franja"
-      for (let R = range.s.r; R <= range.e.r; R++) {
-        const firstCell = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
-        const firstVal = firstCell?.v as string | undefined;
-
-        // Fila de capçalera de setmana?
-        const isHeader =
-          typeof firstVal === "string" &&
-          firstVal.toLowerCase().includes("franja horària") ||
-          firstVal?.toLowerCase().includes("franja horaria") ||
-          firstVal?.toLowerCase().includes("time slot");
-
-        if (isHeader) {
-          // Posar negreta a tota la fila de capçalera
-          for (let C = 0; C <= range.e.c; C++) {
-            const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
-            if (!cell) continue;
-            (cell as any).s = {
-              font: { bold: true },
-              alignment: { horizontal: C === 0 ? "left" : "center" },
-            };
-          }
-          continue;
-        }
-
-        // File de franja? (té a la primera columna "HH:mm-HH:mm")
-        const isSlotRow =
-          typeof firstVal === "string" && /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(firstVal);
-
-        if (isSlotRow) {
-          // Color de la fila segons índex de franja (si tenim múltiples setmanes, tornem a començar)
-          // Troba l'índex de franja a partir del text "HH:mm-HH:mm"
-          const slotIndexColor = (() => {
-            const idx = slots.findIndex((s) => `${s.start}-${s.end}` === firstVal);
-            return idx >= 0 ? idx : 0;
-          })();
-
-          const rgb = slotColors[slotIndexColor % slotColors.length].replace("#", "");
-
-          // Primera columna amb negreta; la resta amb wrap i fons
-          const first = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
-          if (first) (first as any).s = { font: { bold: true } };
-
-          for (let C = 1; C <= range.e.c; C++) {
-            const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
-            if (!cell) continue;
-            (cell as any).s = {
-              alignment: { vertical: "top", wrapText: true },
-              fill: { fgColor: { rgb } },
-            };
+          if (isDisabledDay(day, p)) continue;
+          const dateIso = iso(day);
+          for (let si = 0; si < slots.length; si++) {
+            const key = `${dateIso}|${si}`;
+            const ids = amap[key] ?? [];
+            if (!ids.length) continue;
+            for (const id of ids) {
+              const s = subjects.find((x) => x.id === id);
+              if (!s) continue;
+              const CENTRE = "230";
+              const CURS = s.curs?.toString() ?? String(p.curs ?? inferCursFromDate(day));
+              const QUADRIMESTRE = String(s.quadrimestre ?? p.quad ?? inferQuadFromDate(day));
+              const TIPUS_EXAMEN = p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus;
+              const DIA = format(day, "dd-MM-yyyy");
+              const HORA_INICI = slots[si].start;
+              const HORA_FI = slots[si].end;
+              const UNITAT_DOCENT = s.codi;
+              const GRUPS = ""; // buit
+              const row = [CENTRE, CURS, QUADRIMESTRE, TIPUS_EXAMEN, DIA, HORA_INICI, HORA_FI, UNITAT_DOCENT, GRUPS].join(",");
+              lines.push(row);
+            }
           }
         }
       }
-
-      // Amplades de columna: primera (time slot) més estreta; dies més amples
-      ws["!cols"] = [{ wch: 16 }]; // time slot
-      // Si coneixem el nombre de columnes, afegim amplades per a la resta
-      const totalCols = range.e.c + 1;
-      while ((ws["!cols"] as any[]).length < totalCols) (ws["!cols"] as any[]).push({ wch: 36 });
-
-      // Alçada de files: una mica més gran per veure múltiples línies
-      ws["!rows"] = allRows.map((row) => ({ hpt: row.length ? 42 : 10 }));
     }
-
-    XLSX.utils.book_append_sheet(wb, ws, `${p.tipus}_id${p.id}`);
+    const csv = lines.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "examens_export.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
   }
 
-  // Descarrega
-  const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const blob = new Blob([wbout], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "calendari_examens.xlsx";
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+  function formatSubjectForCell(s: Subject) {
+    const header = `${s.sigles} · ${s.codi}`;
+    const masters = [s.MET, s.MATT, s.MEE, s.MCYBERS]
+      .filter((v) => v && String(v).trim() !== "")
+      .map((v) => String(v).trim())
+      .join("\n");
+    const details = s.nivell ? `Nivell: ${s.nivell}` : masters;
+    return details ? `${header}\n${details}` : header;
+  }
 
-
-
-  /* Import CSV (capçaleres teves + camps MastersTIC opcionals) */
-  const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-
-    const parseDate = (raw: any): string | undefined => {
-      if (!raw) return undefined;
-      const s = String(raw).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // yyyy-MM-dd
-      const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/); // dd/MM/yyyy
-      if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-      return undefined;
-    };
-    const parseSlots = (raw: any): TimeSlot[] => {
-      if (!raw) return [];
-      return String(raw)
-        .split(/[;,|]/)
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .map((pair) => {
-          const mm = pair.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
-          if (!mm) return null;
-          const [_, a, b] = mm;
-          const pad = (h: string) =>
-            h.split(":").map((x) => x.padStart(2, "0")).join(":");
-          return { start: pad(a), end: pad(b) };
-        })
-        .filter(Boolean) as TimeSlot[];
-    };
-    const parseBlackouts = (raw: any): string[] => {
-      if (!raw) return [];
-      const toks = String(raw)
-        .split(/[;,|]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const out: string[] = [];
-      for (const t of toks) {
-        const d = parseDate(t);
-        if (d) out.push(d);
-      }
-      return Array.from(new Set(out)).sort();
-    };
-    const normQuad = (raw: any): 1 | 2 | undefined => {
-      if (raw == null || raw === "") return undefined;
-      const n = Number(String(raw).replace(/\D/g, ""));
-      return n === 1 || n === 2 ? (n as 1 | 2) : undefined;
-    };
-    const normCursAny = (raw: any): string | undefined => {
-      if (!raw && raw !== 0) return undefined;
-      const s = String(raw).trim();
-      const m = s.match(/^(\d{4})\s*[-/]/);
-      if (m) return m[1];
-      const y = s.match(/^\d{4}$/);
-      if (y) return y[0];
-      const first4 = s.match(/(\d{4})/);
-      return first4 ? first4[1] : undefined;
-    };
-
-    Papa.parse(f, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (res: Papa.ParseResult<any>) => {
-        try {
-          const rows = (res.data as any[]).filter(Boolean);
-
-          const outSubjects: Subject[] = [];
-          const periodMap = new Map<number, PeriodMeta>(); // per period_id
-          const slotsMap: SlotsPerPeriod = {};
-
-          for (const r of rows) {
-            const codi = r.codi ?? r.codigo ?? r.CODI ?? r.CODIGO ?? r.code;
-            const sigles = r.sigles ?? r.SIGLES ?? r.siglas ?? r.SIGLAS;
-            const nivell = r.nivell ?? r.NIVELL ?? r.nivel ?? r.NIVEL;
-            const curs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
-            const quadrimestre = normQuad(
-              r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD
-            );
-            // Camps MastersTIC opcionals
-            const MET = r.MET ?? r.met ?? r.Met;
-            const MATT = r.MATT ?? r.matt ?? r.Matt;
-            const MEE = r.MEE ?? r.mee ?? r.Mee;
-            const MCYBERS = r.MCYBERS ?? r.mcybers ?? r.Mcybers;
-
-            if (codi || sigles) {
-              const idBase = String(codi || sigles);
-              outSubjects.push({
-                id: idBase,
-                codi: String(codi || ""),
-                sigles: String(sigles || ""),
-                nivell: nivell ? String(nivell) : undefined,
-                curs,
-                quadrimestre,
-                MET: MET ? String(MET) : undefined,
-                MATT: MATT ? String(MATT) : undefined,
-                MEE: MEE ? String(MEE) : undefined,
-                MCYBERS: MCYBERS ? String(MCYBERS) : undefined,
-              });
-            }
-
-            // Període opcional (id 1..5)
-            const pidRaw = r.period_id ?? r.PERIOD_ID ?? r.PeriodId;
-            const pid = pidRaw ? Number(pidRaw) : NaN;
-            if (!Number.isFinite(pid)) continue;
-            if (pid < 1 || pid > 5) continue;
-
-            if (!periodMap.has(pid)) {
-              const tipusRaw = (r.period_tipus ?? r.PERIOD_TIPUS ?? r.tipo ?? r.TIPO ?? "")
-                .toString().toUpperCase();
-              const tipusNorm: TipusPeriode =
-                tipusRaw === "FINAL"
-                  ? "FINAL"
-                  : tipusRaw === "REAVALUACIO" || tipusRaw === "REAVALUACIÓ" || tipusRaw === "REAVALUACION"
-                  ? "REAVALUACIÓ"
-                  : "PARCIAL";
-
-              const startStr =
-                parseDate(r.period_inici ?? r.PERIOD_INICI ?? r.start) ||
-                format(mondayOfWeek(new Date()), "yyyy-MM-dd");
-              const endStr =
-                parseDate(r.period_fi ?? r.PERIOD_FI ?? r.end) ||
-                format(fridayOfWeek(new Date()), "yyyy-MM-dd");
-
-              const slots =
-                parseSlots(r.period_slots ?? r.PERIOD_SLOTS ?? r.slots) ||
-                [{ start: "08:00", end: "10:00" }];
-
-              const blackouts = parseBlackouts(
-                r.period_blackouts ?? r.PERIOD_BLACKOUTS ?? r.blackouts ?? r.BLOCKED_DATES
-              );
-
-              periodMap.set(pid, {
-                id: pid,
-                tipus: tipusNorm,
-                startStr,
-                endStr,
-                blackouts,
-              });
-              slotsMap[pid] = slots;
-            }
+  function exportExcel() {
+    const wb = XLSX.utils.book_new();
+    const slotColors = ["#E3F2FD", "#E8F5E9", "#FFF3E0", "#F3E5F5", "#E0F7FA", "#FBE9E7"];
+    for (const p of periods) {
+      const slots = slotsPerPeriod[p.id] ?? [];
+      const amap = assignedPerPeriod[p.id] ?? {};
+      const allRows: any[][] = [];
+      for (const { mon } of eachWeek(mondayOfWeek(parseISO(p.startStr)), fridayOfWeek(parseISO(p.endStr)))) {
+        const dayHeaders = Array.from({ length: 5 }).map((_, i) => {
+          const d = addDays(mon, i);
+          return `${["Dl/Mon", "Dt/Tu", "Dc/Wed", "Dj/Thu", "Dv/Fri"][i]} ${format(d, "dd/MM")}`;
+        });
+        allRows.push(["franja horària/Time slot", ...dayHeaders]);
+        for (let si = 0; si < slots.length; si++) {
+          const slot = slots[si];
+          const row: any[] = [`${slot.start}-${slot.end}`];
+          for (let i = 0; i < 5; i++) {
+            const day = addDays(mon, i);
+            if (isDisabledDay(day, p)) { row.push(""); continue; }
+            const ids = (amap[`${iso(day)}|${si}`] ?? []);
+            const list = ids.map(id => subjects.find(x => x.id === id)).filter(Boolean) as Subject[];
+            const text = list.map(s => formatSubjectForCell(s)).join("\n\n");
+            row.push(text);
           }
-
-          // IDs únics per a assignatures
-          const seen = new Set<string>();
-          const uniqueSubjects = outSubjects.map((s) => {
-            let id = s.id;
-            while (seen.has(id)) id = id + "-" + Math.random().toString(36).slice(2,5);
-            seen.add(id);
-            return { ...s, id };
-          });
-          setSubjects(uniqueSubjects);
-
-          if (periodMap.size > 0) {
-            const ordered = Array.from(periodMap.keys()).sort((a, b) => a - b);
-            const list = ordered.map((k) => periodMap.get(k)!);
-            setPeriods(list);
-            setSlotsPerPeriod(slotsMap);
-            setAssignedPerPeriod({});
-            setActivePid(list[0].id);
-            alert(`Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`);
-          } else {
-            alert(`Importades ${uniqueSubjects.length} assignatures del CSV.`);
-          }
-        } catch (err) {
-          console.error(err);
-          alert("Error processant el CSV");
+          allRows.push(row);
         }
-      },
-      error: () => alert("No s'ha pogut llegir el fitxer CSV"),
-    });
+        allRows.push([]); // separador setmanes
+      }
+      const ws = XLSX.utils.aoa_to_sheet(allRows);
+      if (ws["!ref"]) {
+        const range = XLSX.utils.decode_range(ws["!ref"] as string);
+        for (let R = range.s.r; R <= range.e.r; R++) {
+          const firstCell = ws[XLSX.utils.encode_cell({ r: R, c: 0 })];
+          const v = (firstCell?.v as string || "").toLowerCase();
+          const isHeader = v.includes("franja horària") || v.includes("franja horaria") || v.includes("time slot");
+          if (isHeader) {
+            for (let C = 0; C <= range.e.c; C++) {
+              const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+              if (!cell) continue;
+              (cell as any).s = { font: { bold: true }, alignment: { horizontal: C === 0 ? "left" : "center" } };
+            }
+            continue;
+          }
+          const isSlotRow = typeof firstCell?.v === "string" && /^\d{1,2}:\d{2}\s*-\s*\d{1,2}:\d{2}$/.test(firstCell.v);
+          if (isSlotRow) {
+            const idx = (slots.findIndex(s => `${s.start}-${s.end}` === firstCell!.v) + slotColors.length) % slotColors.length;
+            const rgb = slotColors[idx].replace("#", "");
+            if (firstCell) (firstCell as any).s = { font: { bold: true } };
+            for (let C = 1; C <= range.e.c; C++) {
+              const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+              if (!cell) continue;
+              (cell as any).s = { alignment: { vertical: "top", wrapText: true }, fill: { fgColor: { rgb } } };
+            }
+          }
+        }
+        ws["!cols"] = [{ wch: 16 }];
+        const totalCols = (XLSX.utils.decode_range(ws["!ref"] as string).e.c + 1);
+        while ((ws["!cols"] as any[]).length < totalCols) (ws["!cols"] as any[]).push({ wch: 36 });
+        ws["!rows"] = allRows.map(row => ({ hpt: row.length ? 42 : 10 }));
+      }
+      XLSX.utils.book_append_sheet(wb, ws, `${p.tipus}_id${p.id}`);
+    }
+    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "calendari_examens.xlsx";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
 
-    (e.currentTarget as HTMLInputElement).value = ""; // permet reimportar el mateix fitxer
+  function exportTXT() {
+    const LEN = { CODI: 10, CURS: 4, QUAD: 1, NOM: 120, DIA: 10, HORA: 5, DESC: 2000 } as const;
+    const padText = (v: string, len: number) => {
+      const s = (v ?? "").toString();
+      return s.length >= len ? s.slice(0, len) : s + " ".repeat(len - s.length);
+    };
+    const padNum = (v: number | string | undefined, len: number) => {
+      const s = (v ?? "").toString();
+      return s.length >= len ? s.slice(0, len) : " ".repeat(len - s.length) + s;
+    };
+    const lines: string[] = [];
+    for (const p of periods) {
+      const slots = slotsPerPeriod[p.id] ?? [];
+      const amap = assignedPerPeriod[p.id] ?? {};
+      for (const { mon } of eachWeek(mondayOfWeek(parseISO(p.startStr)), fridayOfWeek(parseISO(p.endStr)))) {
+        for (let i = 0; i < 5; i++) {
+          const day = addDays(mon, i);
+          if (isDisabledDay(day, p)) continue;
+          for (let si = 0; si < slots.length; si++) {
+            const ids = (amap[`${iso(day)}|${si}`] ?? []);
+            if (!ids.length) continue;
+            for (const id of ids) {
+              const s = subjects.find(x => x.id === id);
+              if (!s) continue;
+              const CODI = padText(s.codi, LEN.CODI);
+              const CURS = padNum(s.curs ?? String(p.curs ?? inferCursFromDate(day)), LEN.CURS);
+              const QUAD = padNum(s.quadrimestre ?? p.quad ?? inferQuadFromDate(day), LEN.QUAD);
+              const NOM  = padText(s.sigles, LEN.NOM);
+              const DIA  = padText(format(day, "dd-MM-yyyy"), LEN.DIA);
+              const HORA = padText((slots[si].start || "").replace(":", "-"), LEN.HORA);
+              const DESC = padText(p.tipus === "REAVALUACIÓ" ? "REAVALUACIO" : p.tipus, LEN.DESC);
+              lines.push([CODI, CURS, QUAD, NOM, DIA, HORA, DESC].join(" "));
+            }
+          }
+        }
+      }
+    }
+    const txt = lines.join("\n");
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "examens_export.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+/* Import CSV — fija també curs/quad dins de cada període si cal */
+const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+
+  // --- Parsers i normalitzadors auxiliars ---
+  const parseDate = (raw: any): string | undefined => {
+    if (!raw) return undefined;
+    const s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;                // yyyy-MM-dd
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);           // dd/MM/yyyy
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const m2 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);            // dd-MM-yyyy
+    if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+    return undefined;
+  };
+  const parseSlots = (raw: any): TimeSlot[] => {
+    if (!raw) return [];
+    return String(raw)
+      .split(/[;,|]/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+      .map((pair) => {
+        const mm = pair.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+        if (!mm) return null;
+        const [_, a, b] = mm;
+        const pad = (h: string) => h.split(":").map((x) => x.padStart(2, "0")).join(":");
+        return { start: pad(a), end: pad(b) };
+      })
+      .filter(Boolean) as TimeSlot[];
+  };
+  const parseBlackouts = (raw: any): string[] => {
+    if (!raw) return [];
+    const toks = String(raw).split(/[;,|]/).map((s) => s.trim()).filter(Boolean);
+    const out: string[] = [];
+    for (const t of toks) {
+      const d = parseDate(t);
+      if (d) out.push(d);
+    }
+    return Array.from(new Set(out)).sort();
+  };
+  const normQuad = (raw: any): 1 | 2 | undefined => {
+    if (raw == null || raw === "") return undefined;
+    const n = Number(String(raw).replace(/\D/g, ""));
+    return n === 1 || n === 2 ? (n as 1 | 2) : undefined;
+  };
+  const normCursAny = (raw: any): string | undefined => {
+    if (!raw && raw !== 0) return undefined;
+    const s = String(raw).trim();
+    const m = s.match(/^(\d{4})\s*[-/]/);
+    if (m) return m[1];
+    const y = s.match(/^\d{4}$/);
+    if (y) return y[0];
+    const first4 = s.match(/(\d{4})/);
+    return first4 ? first4[1] : undefined;
   };
 
-  /* Render */
+  Papa.parse(f, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (res: Papa.ParseResult<any>) => {
+      try {
+        const rows = (res.data as any[]).filter(Boolean);
+
+        // Col·lectors
+        const outSubjects: Subject[] = [];
+        const periodMap = new Map<number, Period>();   // period_id → Period
+        const slotsMap: SlotsPerPeriod = {};           // period_id → TimeSlot[]
+
+        // Per deduir curs/quad de període si no venen com a columnes de període
+        const quadSeenPerPid = new Map<number, 1|2>();
+        const cursSeenPerPid = new Map<number, number>();
+
+        for (const r of rows) {
+          // --- Assignatures ---
+          const codi = r.codi ?? r.codigo ?? r.CODI ?? r.CODIGO ?? r.code;
+          const sigles = r.sigles ?? r.SIGLES ?? r.siglas ?? r.SIGLAS;
+          const nivell = r.nivell ?? r.NIVELL ?? r.nivel ?? r.NIVEL;
+          const curs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
+          const quadrimestre = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
+          const MET = r.MET ?? r.met;
+          const MATT = r.MATT ?? r.matt;
+          const MEE = r.MEE ?? r.mee;
+          const MCYBERS = r.MCYBERS ?? r.mcybers;
+
+          if (codi || sigles) {
+            const idBase = String(codi || sigles);
+            outSubjects.push({
+              id: idBase,
+              codi: String(codi || ""),
+              sigles: String(sigles || ""),
+              nivell: nivell ? String(nivell) : undefined,
+              curs,
+              quadrimestre,
+              MET: MET ? String(MET) : undefined,
+              MATT: MATT ? String(MATT) : undefined,
+              MEE: MEE ? String(MEE) : undefined,
+              MCYBERS: MCYBERS ? String(MCYBERS) : undefined,
+            });
+          }
+
+          // --- Període associat a la fila ---
+          const pidRaw = r.period_id ?? r.PERIOD_ID ?? r.PeriodId;
+          const pid = pidRaw ? Number(pidRaw) : NaN;
+          if (!Number.isFinite(pid) || pid < 1 || pid > 5) continue;
+
+          // Tipus de període
+          const tipusRaw = (r.period_tipus ?? r.PERIOD_TIPUS ?? r.tipo ?? r.TIPO ?? "")
+            .toString().toUpperCase();
+          const tipusNorm: TipusPeriode =
+            tipusRaw === "FINAL" ? "FINAL"
+            : (tipusRaw === "REAVALUACIO" || tipusRaw === "REAVALUACIÓ" || tipusRaw === "REAVALUACION") ? "REAVALUACIÓ"
+            : "PARCIAL";
+
+          const startStr =
+            parseDate(r.period_inici ?? r.PERIOD_INICI ?? r.start) ||
+            format(mondayOfWeek(new Date()), "yyyy-MM-dd");
+          const endStr =
+            parseDate(r.period_fi ?? r.PERIOD_FI ?? r.end) ||
+            format(fridayOfWeek(new Date()), "yyyy-MM-dd");
+
+          const slots = parseSlots(r.period_slots ?? r.PERIOD_SLOTS ?? r.slots) || [{ start: "08:00", end: "10:00" }];
+          const blackouts = parseBlackouts(r.period_blackouts ?? r.PERIOD_BLACKOUTS ?? r.blackouts ?? r.BLOCKED_DATES);
+
+          // Curs/quadrimestre declarats com a columnes de període (si existeixen)
+          const periodCurs = normCursAny(r.period_curs ?? r.PERIOD_CURS);
+          const periodQuad = normQuad(r.period_quad ?? r.PERIOD_QUAD);
+
+          // Si no venen com a període, mira els de la fila (serveixen com a "pista")
+          const filaCurs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
+          const filaQuad = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
+
+          // Desa pistes per a deducció posterior
+          if (filaQuad) quadSeenPerPid.set(pid, filaQuad);
+          if (filaCurs) cursSeenPerPid.set(pid, Number(filaCurs));
+
+          if (!periodMap.has(pid)) {
+            periodMap.set(pid, {
+              id: pid,
+              label: `Període ${pid}`,
+              tipus: tipusNorm,
+              startStr,
+              endStr,
+              curs: periodCurs ? Number(periodCurs) : undefined,
+              quad: periodQuad,
+              blackouts,
+            });
+            slotsMap[pid] = slots;
+          } else {
+            // Completa camps que faltin
+            const p = periodMap.get(pid)!;
+            if (p.tipus !== tipusNorm) {
+              // mantén el primer que va arribar; opcionalment, podries harmonitzar
+            }
+            if (!p.curs && periodCurs) p.curs = Number(periodCurs);
+            if (!p.quad && periodQuad) p.quad = periodQuad;
+            // No sobreescrivim rang ni slots si ja existeixen
+          }
+        }
+
+        // Deducció final: si un període segueix sense quad/curs, prova amb les pistes
+        for (const [pid, p] of periodMap) {
+          if (p.quad == null && quadSeenPerPid.has(pid)) {
+            p.quad = quadSeenPerPid.get(pid)!;
+          }
+          if (p.curs == null && cursSeenPerPid.has(pid)) {
+            p.curs = cursSeenPerPid.get(pid)!;
+          }
+        }
+
+        // IDs únics per a assignatures
+        const seen = new Set<string>();
+        const uniqueSubjects = outSubjects.map((s) => {
+          let id = s.id;
+          while (seen.has(id)) id = id + "-" + Math.random().toString(36).slice(2,5);
+          seen.add(id);
+          return { ...s, id };
+        });
+
+        setSubjects(uniqueSubjects);
+
+        if (periodMap.size > 0) {
+          const ordered = Array.from(periodMap.keys()).sort((a, b) => a - b);
+          const list = ordered.map((k) => periodMap.get(k)!);
+          setPeriods(list);
+          setSlotsPerPeriod(slotsMap);
+          setAssignedPerPeriod({});
+          setActivePid(list[0].id);
+          alert(`Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`);
+        } else {
+          alert(`Importades ${uniqueSubjects.length} assignatures del CSV.`);
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Error processant el CSV");
+      }
+    },
+    error: () => alert("No s'ha pogut llegir el fitxer CSV"),
+  });
+
+  e.currentTarget.value = ""; // permet reimportar el mateix fitxer
+};
+
+  /* ---------- Render ---------- */
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
-      <h1 className="text-2xl font-bold mb-2">
-        Planificador d'exàmens — CSV amb períodes, franges i dies no disponibles
-      </h1>
+      <h1 className="text-2xl font-bold mb-2">Planificador d'exàmens — períodes amb curs/quadrimestre</h1>
       <p className="text-sm mb-6">
-        Capçaleres esperades:{" "}
-        <code>
-          codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts
-        </code>
-        . Els camps opcionals **MastersTIC**: <code>MET,MATT,MEE,MCYBERS</code>.
+        CSV esperat: <code>codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts</code>.
+        Opcional: <code>MET,MATT,MEE,MCYBERS</code>. També admet <code>period_curs,period_quad</code> per omplir el curs/quad de cada període.
       </p>
 
-      {/* Dades i intercanvi */}
-<button onClick={exportExcel} className="px-3 py-2 border rounded-xl shadow-sm">
-  Exportar Excel
-</button>
-
+      {/* Intercanvi de dades */}
       <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
         <h2 className="font-semibold mb-3">Dades i intercanvi</h2>
         <div className="flex flex-wrap gap-3 items-center">
@@ -955,26 +774,21 @@ row.push(text);
 
           <button onClick={exportCSV} className="px-3 py-2 border rounded-xl shadow-sm">Exportar CSV</button>
           <button onClick={exportTXT} className="px-3 py-2 border rounded-xl shadow-sm">Exportar TXT</button>
+          <button onClick={exportExcel} className="px-3 py-2 border rounded-xl shadow-sm">Exportar Excel</button>
           <button onClick={exportJSON} className="px-3 py-2 border rounded-xl shadow-sm">Exportar JSON</button>
           <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
             Importar JSON
             <input type="file" accept="application/json" className="hidden" onChange={importJSON} />
           </label>
 
-          {/* Enllaç */}
-          <button onClick={saveStateToUrl} className="px-3 py-2 border rounded-xl shadow-sm">
-            Guardar a l’enllaç
-          </button>
+          <button onClick={saveStateToUrl} className="px-3 py-2 border rounded-xl shadow-sm">Guardar a l’enllaç</button>
           <button
             onClick={() => { if (!loadStateFromUrl()) alert("No s’ha trobat cap estat a l’enllaç."); }}
             className="px-3 py-2 border rounded-xl shadow-sm"
           >
             Carregar de l’enllaç
           </button>
-          <button onClick={copyLinkToClipboard} className="px-3 py-2 border rounded-xl shadow-sm">
-            Copiar enllaç
-          </button>
-
+          <button onClick={copyLinkToClipboard} className="px-3 py-2 border rounded-xl shadow-sm">Copiar enllaç</button>
           <span className="text-xs text-gray-500 ml-auto">
             Disponibles: {availableSubjects.length}/{subjects.length}
           </span>
@@ -988,9 +802,7 @@ row.push(text);
             <button
               key={p.id}
               onClick={() => setActivePid(p.id)}
-              className={`px-3 py-2 rounded-xl border shadow-sm ${
-                p.id === activePid ? "bg-indigo-50 border-indigo-300" : "bg-white"
-              }`}
+              className={`px-3 py-2 rounded-xl border shadow-sm ${p.id === activePid ? "bg-indigo-50 border-indigo-300" : "bg-white"}`}
               title="Canviar de període"
             >
               {p.tipus} · id {p.id}
@@ -1000,53 +812,63 @@ row.push(text);
         <div className="flex gap-2">
           <button onClick={addPeriod} className="px-3 py-2 border rounded-xl shadow-sm">Afegir període</button>
           {periods.length > 1 && (
-            <button onClick={()=>removePeriod(activePid)} className="px-3 py-2 border rounded-xl shadow-sm">
+            <button onClick={() => removePeriod(activePid)} className="px-3 py-2 border rounded-xl shadow-sm">
               Eliminar període actiu
             </button>
           )}
         </div>
       </div>
 
-      {/* Configuració del període actiu + franges + blackouts */}
+      {/* Configuració del període actiu */}
       {activePeriod && (
         <div className="grid md:grid-cols-3 gap-4 mb-6">
           <div className="p-4 rounded-2xl border shadow-sm bg-white">
             <h2 className="font-semibold mb-3">Configuració del període</h2>
 
-<label className="block text-sm mb-1">Tipus</label>
-<select
-  value={activePeriod.tipus}
-  onChange={(e) => {
-    const v = e.target.value as TipusPeriode;
-    setPeriods(arr => arr.map(p => p.id === activePid ? { ...p, tipus: v } : p));
-  }}
-  className="w-full border rounded-xl p-2"
->
-  <option>PARCIAL</option>
-  <option>FINAL</option>
-  <option>REAVALUACIÓ</option>
-</select>
+            <label className="block text-sm mb-1">Tipus</label>
+            <select
+              value={activePeriod.tipus}
+              onChange={(e) => {
+                const v = e.target.value as TipusPeriode;
+                setPeriods(arr => arr.map(p => p.id === activePid ? { ...p, tipus: v } : p));
+              }}
+              className="w-full border rounded-xl p-2"
+            >
+              <option>PARCIAL</option>
+              <option>FINAL</option>
+              <option>REAVALUACIÓ</option>
+            </select>
 
-{/* 👇 Afegim aquí el selector de quadrimestre del període */}
-<label className="block text-sm mt-3 mb-1">Quadrimestre del període</label>
-<select
-  value={activePeriod.quad ?? 0}
-  onChange={(e) => {
-    const v = Number(e.target.value) as 0 | 1 | 2;
-    setPeriods(arr =>
-      arr.map(p =>
-        p.id === activePid
-          ? { ...p, quad: v === 1 || v === 2 ? (v as 1 | 2) : undefined }
-          : p
-      )
-    );
-  }}
-  className="w-full border rounded-xl p-2"
->
-  <option value={0}>(No filtrar)</option>
-  <option value={1}>1</option>
-  <option value={2}>2</option>
-</select>
+            <label className="block text-sm mt-3 mb-1">Curs (any d’inici)</label>
+            <input
+              type="number"
+              placeholder="Ex. 2025"
+              value={activePeriod.curs ?? ""}
+              onChange={(e) => {
+                const n = e.target.value ? Number(e.target.value) : undefined;
+                setPeriods(arr => arr.map(p => p.id === activePid ? { ...p, curs: n } : p));
+              }}
+              className="w-full border rounded-xl p-2"
+            />
+
+            <label className="block text-sm mt-3 mb-1">Quadrimestre del període</label>
+            <select
+              value={activePeriod.quad ?? 0}
+              onChange={(e) => {
+                const v = Number(e.target.value) as 0 | 1 | 2;
+                setPeriods(arr =>
+                  arr.map(p =>
+                    p.id === activePid ? { ...p, quad: v === 1 || v === 2 ? (v as 1 | 2) : undefined } : p
+                  )
+                );
+              }}
+              className="w-full border rounded-xl p-2"
+            >
+              <option value={0}>(Sense)</option>
+              <option value={1}>1</option>
+              <option value={2}>2</option>
+            </select>
+
             <label className="block text-sm mt-3 mb-1">Inici</label>
             <input
               type="date"
@@ -1062,7 +884,7 @@ row.push(text);
               className="w-full border rounded-xl p-2"
             />
 
-            {/* Blackouts UI */}
+            {/* Blackouts */}
             <div className="mt-4">
               <h3 className="font-semibold mb-2 text-sm">Dies no disponibles</h3>
               <div className="flex gap-2 items-center">
@@ -1109,6 +931,7 @@ row.push(text);
             </div>
           </div>
 
+          {/* Franges horàries */}
           <div className="p-4 rounded-2xl border shadow-sm bg-white md:col-span-2">
             <h2 className="font-semibold mb-3">Franges horàries (per a aquest període)</h2>
             <div className="space-y-2">
@@ -1182,59 +1005,24 @@ row.push(text);
         </div>
       )}
 
-      {/* DnD + calaix + calendari */}
+      {/* Calaix + Calendari */}
       <DndContext onDragEnd={onDragEnd} modifiers={[restrictToWindowEdges]}>
-        {/* Calaix d'assignatures (amb filtres) */}
+        {/* Safata d'assignatures (sense selectors addicionals; es filtra pel període) */}
         <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
           <h2 className="font-semibold mb-3">Assignatures (arrossega)</h2>
-
-          <div className="flex flex-wrap items-center gap-3 mb-3">
-            <div className="text-sm">
-              <label className="mr-2">Curs (any):</label>
-              <select
-                value={filterCurs}
-                onChange={(e)=> setFilterCurs(e.target.value)}
-                className="border rounded-xl p-2"
-              >
-                <option value="">(Tots)</option>
-                {allCursos.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div className="text-sm">
-              <label className="mr-2">Quadrimestre:</label>
-              <select
-                value={filterQuad}
-                onChange={(e)=> setFilterQuad(Number(e.target.value) as 0|1|2)}
-                className="border rounded-xl p-2"
-              >
-                <option value={0}>(Tots)</option>
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-              </select>
-            </div>
-
-            <button
-              onClick={()=>{ setFilterCurs(""); setFilterQuad(0); }}
-              className="text-sm px-3 py-2 border rounded-xl shadow-sm"
-            >
-              Neteja filtres
-            </button>
-          </div>
-
           <div className="flex flex-wrap gap-2">
             {availableSubjects.map((s) => (
               <Chip key={s.id} id={s.id} s={s} />
             ))}
-            {availableSubjects.length === 0 && (
+            {!availableSubjects.length && (
               <div className="text-xs text-gray-500 italic">
-                No queden assignatures per programar amb els filtres actuals.
+                No hi ha assignatures per al curs/quadrimestre d’aquest període, o ja estan totes programades.
               </div>
             )}
           </div>
         </div>
 
-        {/* Calendari */}
+        {/* Calendari del període actiu */}
         {activePeriod && (
           <div className="mb-8">
             <div className="flex items-center gap-3 mb-2">
@@ -1269,14 +1057,11 @@ row.push(text);
                           <td className="border p-2 align-top font-medium whitespace-nowrap">{s.start}-{s.end}</td>
                           {Array.from({length:5}).map((_,i)=>{
                             const day = addDays(mon, i);
-                            const dateIso = format(day, "yyyy-MM-dd");
+                            const dateIso = iso(day);
                             const disabled = isDisabledDay(day, activePeriod);
                             const amap = assignedPerPeriod[activePid] ?? {};
-                            const key = cellKey(dateIso, slotIndex);
-                            const subjIds = amap[key] ?? [];
-                            const assignedList = subjIds
-                              .map((id) => subjects.find((x) => x.id === id))
-                              .filter(Boolean) as Subject[];
+                            const subjIds = (amap[cellKey(dateIso, slotIndex)] ?? []);
+                            const assignedList = subjIds.map(id => subjects.find(x => x.id === id)).filter(Boolean) as Subject[];
                             return (
                               <DropCell
                                 key={i}
@@ -1300,8 +1085,9 @@ row.push(text);
 
       <div className="mt-8 text-xs text-gray-500">
         <ul className="list-disc ml-5 space-y-1">
-          <li>Fins a 5 períodes amb pestanyes; cada període té franges, dates i dies no disponibles.</li>
-          <li>CSV amb <code>codi,sigles,nivell,curs,quadrimestre</code> i bloc <code>period_*</code>; opcionalment <code>MET,MATT,MEE,MCYBERS</code> (si no hi ha <code>nivell</code>, es mostren en línies diferents).</li>
+          <li>Fins a 5 períodes amb pestanyes; cada període amb <em>curs</em>, <em>quadrimestre</em>, franges, dates i dies no disponibles.</li>
+          <li>La safata d’assignatures es filtra automàticament segons el període actiu.</li>
+          <li>CSV/Excel/TXT/JSON exporten tot el calendari (tots els períodes).</li>
           <li>Pots guardar l’estat a l’enllaç, carregar-lo i copiar l’enllaç per compartir.</li>
         </ul>
       </div>
