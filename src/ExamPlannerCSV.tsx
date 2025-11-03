@@ -59,9 +59,8 @@ interface Subject {
   codi: string;
   sigles: string;
   nivell?: string;
-  curs?: string;              // any inici com a text: "2025"
+  curs?: string;
   quadrimestre?: 1 | 2;
-  // Camps MastersTIC opcionals
   MET?: string;
   MATT?: string;
   MEE?: string;
@@ -73,6 +72,14 @@ interface TimeSlot { start: string; end: string; } // "HH:mm"
 type AssignedMap = Record<string, string[]>;     // "YYYY-MM-DD|slotIndex" → [subjectId,...]
 type AssignedPerPeriod = Record<number, AssignedMap>;
 type SlotsPerPeriod = Record<number, TimeSlot[]>;
+
+/** Informació d’aules i matriculats per cel·la i assignatura */
+type RoomsEnroll = {
+  rooms: string[];
+  students?: number;
+};
+type RoomsMapPerCell = Record<string, RoomsEnroll>; // subjectId → info
+type RoomsDataPerPeriod = Record<number, Record<string, RoomsMapPerCell>>; // pid → (dateIso|slotIdx) → map
 
 /* ---------- Subcomponents ---------- */
 function MastersLines({ s }: { s: Subject }) {
@@ -120,11 +127,13 @@ function DropCell({
   id,
   disabled,
   assignedList,
+  extrasForSubjects,
   onRemoveOne,
 }: {
   id: string;
   disabled?: boolean;
   assignedList?: Subject[];
+  extrasForSubjects?: Record<string, RoomsEnroll>; // subjectId -> info
   onRemoveOne?: (subjectId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled });
@@ -139,31 +148,54 @@ function DropCell({
     >
       {assignedList && assignedList.length ? (
         <div className="space-y-2">
-          {assignedList.map((s) => (
-            <div
-              key={s.id}
-              className={`relative p-2 rounded-xl border shadow-sm ${disabled ? "opacity-60" : "bg-gray-50"}`}
-            >
-              <div className="text-sm font-semibold leading-tight">
-                {s.sigles} · {s.codi}
+          {assignedList.map((s) => {
+            const extra = extrasForSubjects?.[s.id];
+            const hasRooms = extra && extra.rooms && extra.rooms.length > 0;
+            const hasStud = extra && typeof extra.students === "number" && !Number.isNaN(extra.students);
+            return (
+              <div
+                key={s.id}
+                className={`relative p-2 rounded-xl border shadow-sm ${disabled ? "opacity-60" : "bg-gray-50"}`}
+              >
+                <div className="text-sm font-semibold leading-tight">
+                  {s.sigles} · {s.codi}
+                </div>
+                {s.nivell ? (
+                  <div className="text-xs opacity-80">Nivell: {s.nivell}</div>
+                ) : (
+                  <MastersLines s={s} />
+                )}
+
+                {(hasRooms || hasStud) && (
+                  <div className="mt-1 space-y-0.5 text-xs">
+                    {hasRooms && (
+                      <div>
+                        <span className="font-medium">Aules/Rooms:</span>{" "}
+                        {extra!.rooms.join(", ")}
+                      </div>
+                    )}
+                    {hasStud && (
+                      <div>
+                        <span className="font-medium">Estudiants/Students:</span>{" "}
+                        {extra!.students}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {!disabled && onRemoveOne && (
+                  <button
+                    onClick={() => onRemoveOne(s.id)}
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full border bg-white shadow text-xs"
+                    aria-label="Eliminar"
+                    title="Eliminar d’aquesta cel·la"
+                  >
+                    ×
+                  </button>
+                )}
               </div>
-              {s.nivell ? (
-                <div className="text-xs opacity-80">Nivell: {s.nivell}</div>
-              ) : (
-                <MastersLines s={s} />
-              )}
-              {!disabled && onRemoveOne && (
-                <button
-                  onClick={() => onRemoveOne(s.id)}
-                  className="absolute -top-2 -right-2 w-6 h-6 rounded-full border bg-white shadow text-xs"
-                  aria-label="Eliminar"
-                  title="Eliminar d’aquesta cel·la"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-xs text-gray-400 italic">
@@ -209,6 +241,9 @@ export default function ExamPlannerCSV() {
   /* Assignacions per període */
   const [assignedPerPeriod, setAssignedPerPeriod] = useState<AssignedPerPeriod>({});
 
+  /* Aules/Matriculats per període/cel·la/assignatura */
+  const [roomsData, setRoomsData] = useState<RoomsDataPerPeriod>({});
+
   const activePeriod = periods.find((p) => p.id === activePid)!;
 
   function isDisabledDay(d: Date, p: Period) {
@@ -244,7 +279,7 @@ export default function ExamPlannerCSV() {
 
   /* Guardar/Carregar estat a URL (hash) */
   function saveStateToUrl() {
-    const payload = { subjects, periods, slotsPerPeriod, assignedPerPeriod, activePid };
+    const payload = { subjects, periods, slotsPerPeriod, assignedPerPeriod, activePid, roomsData };
     const packed = compressToEncodedURIComponent(JSON.stringify(payload));
     const url = new URL(window.location.href);
     url.hash = `state=${packed}`;
@@ -262,6 +297,7 @@ export default function ExamPlannerCSV() {
       if (Array.isArray(data.periods)) setPeriods(data.periods);
       if (data.slotsPerPeriod) setSlotsPerPeriod(data.slotsPerPeriod);
       if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
+      if (data.roomsData) setRoomsData(data.roomsData);
       if (typeof data.activePid === "number") setActivePid(data.activePid);
       return true;
     } catch { return false; }
@@ -313,6 +349,7 @@ export default function ExamPlannerCSV() {
       if (next.length) copy[key] = next; else delete copy[key];
       return { ...prev, [pid]: copy };
     });
+    // Mantenim les dades d'aules si vols reassignar després? Les deixem; la visualització només apareix si la capseta hi és.
   }
 
   /* Gestió períodes */
@@ -339,6 +376,7 @@ export default function ExamPlannerCSV() {
     setPeriods(periods.filter((p) => p.id !== id));
     setAssignedPerPeriod((ap) => { const c = { ...ap }; delete c[id]; return c; });
     setSlotsPerPeriod((sp) => { const c = { ...sp }; delete c[id]; return c; });
+    setRoomsData((rd) => { const c = { ...rd }; delete c[id]; return c; });
     if (activePid === id) {
       const rest = periods.filter((p) => p.id !== id);
       if (rest.length) setActivePid(rest[0].id);
@@ -347,7 +385,7 @@ export default function ExamPlannerCSV() {
 
   /* Exportacions */
   function exportJSON() {
-    const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects };
+    const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects, roomsData };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -366,6 +404,7 @@ export default function ExamPlannerCSV() {
         if (data.slotsPerPeriod) setSlotsPerPeriod(data.slotsPerPeriod);
         if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
         if (Array.isArray(data.subjects)) setSubjects(data.subjects);
+        if (data.roomsData) setRoomsData(data.roomsData);
         if (Array.isArray(data.periods) && data.periods.length) setActivePid(data.periods[0].id);
       } catch { alert("JSON no vàlid"); }
     };
@@ -454,9 +493,18 @@ export default function ExamPlannerCSV() {
           for (let i = 0; i < 5; i++) {
             const day = addDays(mon, i);
             if (isDisabledDay(day, p)) { row.push(""); continue; }
-            const ids = (amap[`${iso(day)}|${si}`] ?? []);
+            const key = `${iso(day)}|${si}`;
+            const ids = (amap[key] ?? []);
             const list = ids.map(id => subjects.find(x => x.id === id)).filter(Boolean) as Subject[];
-            const text = list.map(s => formatSubjectForCell(s)).join("\n\n");
+            const text = list.map(s => {
+              const base = formatSubjectForCell(s);
+              const extra = roomsData?.[p.id]?.[key]?.[s.id];
+              if (!extra) return base;
+              const lines: string[] = [base];
+              if (extra.rooms?.length) lines.push(`Aules/Rooms: ${extra.rooms.join(", ")}`);
+              if (typeof extra.students === "number") lines.push(`Estudiants/Students: ${extra.students}`);
+              return lines.join("\n");
+            }).join("\n\n");
             row.push(text);
           }
           allRows.push(row);
@@ -551,7 +599,8 @@ export default function ExamPlannerCSV() {
     a.click();
     URL.revokeObjectURL(a.href);
   }
-/* Import CSV — fija també curs/quad dins de cada període si cal */
+
+/* ---------- Import CSV (assignatures + períodes) — intacte ---------- */
 const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
@@ -700,18 +749,13 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
             });
             slotsMap[pid] = slots;
           } else {
-            // Completa camps que faltin
             const p = periodMap.get(pid)!;
-            if (p.tipus !== tipusNorm) {
-              // mantén el primer que va arribar; opcionalment, podries harmonitzar
-            }
             if (!p.curs && periodCurs) p.curs = Number(periodCurs);
             if (!p.quad && periodQuad) p.quad = periodQuad;
-            // No sobreescrivim rang ni slots si ja existeixen
           }
         }
 
-        // Deducció final: si un període segueix sense quad/curs, prova amb les pistes
+        // Deducció final
         for (const [pid, p] of periodMap) {
           if (p.quad == null && quadSeenPerPid.has(pid)) {
             p.quad = quadSeenPerPid.get(pid)!;
@@ -738,6 +782,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           setPeriods(list);
           setSlotsPerPeriod(slotsMap);
           setAssignedPerPeriod({});
+          setRoomsData({});
           setActivePid(list[0].id);
           alert(`Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`);
         } else {
@@ -754,13 +799,127 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   e.currentTarget.value = ""; // permet reimportar el mateix fitxer
 };
 
+/* ---------- Import CSV (Aules + Matriculats) ---------- */
+const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+
+  const parseDate = (raw: any): string | undefined => {
+    if (!raw) return undefined;
+    const s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const m2 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+    return undefined;
+  };
+  const normTime = (t: any): string | undefined => {
+    if (!t && t !== 0) return undefined;
+    const s = String(t).trim();
+    const m = s.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return undefined;
+    return `${m[1].padStart(2,"0")}:${m[2]}`;
+  };
+
+  Papa.parse(f, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (res: Papa.ParseResult<any>) => {
+      try {
+        const rows = (res.data as any[]).filter(Boolean);
+        if (!rows.length) { alert("CSV buit."); return; }
+
+        let attached = 0, skipped = 0;
+
+        // Construïm un índex ràpid: per període → per franja "HH:mm|HH:mm" → slotIndex
+        const slotIdxByPid: Record<number, Record<string, number>> = {};
+        for (const p of periods) {
+          const slots = slotsPerPeriod[p.id] ?? [];
+          slotIdxByPid[p.id] = {};
+          slots.forEach((sl, i) => {
+            slotIdxByPid[p.id][`${sl.start}|${sl.end}`] = i;
+          });
+        }
+
+        // Copia mutable per acumular canvis
+        const nextRoomsData: RoomsDataPerPeriod = JSON.parse(JSON.stringify(roomsData || {}));
+
+        for (const r of rows) {
+          // Camps esperats amb variants
+          const codi = r.codi ?? r.CODI ?? r.codigo ?? r.CODIGO ?? r.code;
+          const sigles = r.sigles ?? r.SIGLES ?? r.siglas ?? r.SIGLAS;
+
+          const periode =
+            r.periode ?? r.PERIode ?? r.PERIODO ?? r.periode_id ?? r.period_id ?? r.PERIOD ?? r.Period ?? r.Període;
+          const pid = Number(periode);
+          if (!Number.isFinite(pid) || !(periods.some(p => p.id === pid))) { skipped++; continue; }
+
+          const dayIso = parseDate(r["dia d'examen"] ?? r.dia ?? r.DIA ?? r.fecha ?? r.FECHA ?? r.day);
+          const start = normTime(r["hora d'inici de l'examen"] ?? r.hora_inici ?? r.inici ?? r.start ?? r.HORA_INICI);
+          const end = normTime(r["hora de fi de l'examen"] ?? r.hora_fi ?? r.fi ?? r.end ?? r.HORA_FI);
+          const aula = (r.aula ?? r.AULA ?? r.room ?? r.ROOM ?? r.classroom ?? "").toString().trim();
+          const nStudRaw = r["número d'estudiants matriculats"] ?? r.matriculats ?? r.matriculados ?? r.students ?? r.STUDENTS ?? r.num_estudiants ?? r.NUM_ESTUDIANTS;
+          const nStudents = nStudRaw != null && nStudRaw !== "" ? Number(String(nStudRaw).replace(/[^\d]/g,"")) : undefined;
+
+          if (!dayIso || !start || !end || !aula) { skipped++; continue; }
+          const idx = slotIdxByPid[pid]?.[`${start}|${end}`];
+          if (idx == null) { skipped++; continue; }
+
+          const key = `${dayIso}|${idx}`;
+
+          // Busquem dins la cel·la les assignatures arrossegades per decidir quin subjectId toca
+          const assignedIdsInCell = (assignedPerPeriod[pid]?.[key] ?? []);
+          // Criteri: primer intentem per codi; si no, per sigles.
+          const matchId =
+            assignedIdsInCell.find(id => subjects.find(s => s.id === id)?.codi === String(codi || "")) ??
+            assignedIdsInCell.find(id => subjects.find(s => s.id === id)?.sigles === String(sigles || ""));
+
+          if (!matchId) {
+            // Si la capseta encara no s’ha arrossegat a aquesta cel·la, no podem saber a quin subjectId vincular-ho.
+            // Guardem de totes formes si hi ha una única coincidència global per codi/sigles? Evitem heurístiques arriscades: ho omitim.
+            skipped++; continue;
+          }
+
+          // Inicialitza contenidors
+          if (!nextRoomsData[pid]) nextRoomsData[pid] = {};
+          if (!nextRoomsData[pid][key]) nextRoomsData[pid][key] = {};
+          if (!nextRoomsData[pid][key][matchId]) nextRoomsData[pid][key][matchId] = { rooms: [] };
+
+          const entry = nextRoomsData[pid][key][matchId];
+
+          // Aules: afegeix conservant ordre i evitant duplicats contigus
+          if (aula && !entry.rooms.includes(aula)) {
+            entry.rooms.push(aula);
+          }
+          // Estudiants: mostra un cop (prenem el primer valor numèric vàlid si no n’hi ha)
+          if (typeof nStudents === "number" && Number.isFinite(nStudents) && entry.students == null) {
+            entry.students = nStudents;
+          }
+
+          attached++;
+        }
+
+        setRoomsData(nextRoomsData);
+        alert(`Aules/Matrículats processats. Afegits: ${attached}. Omesos: ${skipped}.`);
+      } catch (err) {
+        console.error(err);
+        alert("Error processant el CSV d’aules/matriculats");
+      }
+    },
+    error: () => alert("No s'ha pogut llegir el fitxer CSV d’aules/matriculats"),
+  });
+
+  e.currentTarget.value = "";
+};
+
   /* ---------- Render ---------- */
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
       <h1 className="text-2xl font-bold mb-2">Planificador d'exàmens — períodes amb curs/quadrimestre</h1>
       <p className="text-sm mb-6">
-        CSV esperat: <code>codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts</code>.
-        Opcional: <code>MET,MATT,MEE,MCYBERS</code>. També admet <code>period_curs,period_quad</code> per omplir el curs/quad de cada període.
+        CSV esperat (assignatures/períodes): <code>codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts</code>.
+        Opcional: <code>MET,MATT,MEE,MCYBERS</code>. També admet <code>period_curs,period_quad</code>.
       </p>
 
       {/* Intercanvi de dades */}
@@ -770,6 +929,11 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
             Importar CSV
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCSV} />
+          </label>
+
+          <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
+            Importar Aules/Matriculats (CSV)
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportRoomsCSV} />
           </label>
 
           <button onClick={exportCSV} className="px-3 py-2 border rounded-xl shadow-sm">Exportar CSV</button>
@@ -822,6 +986,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       {/* Configuració del període actiu */}
       {activePeriod && (
         <div className="grid md:grid-cols-3 gap-4 mb-6">
+          {/* ... (SECCIÓ CONFIGURACIÓ igual que abans) ... */}
           <div className="p-4 rounded-2xl border shadow-sm bg-white">
             <h2 className="font-semibold mb-3">Configuració del període</h2>
 
@@ -884,7 +1049,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
               className="w-full border rounded-xl p-2"
             />
 
-            {/* Blackouts */}
+            {/* Blackouts (igual que abans) */}
             <div className="mt-4">
               <h3 className="font-semibold mb-2 text-sm">Dies no disponibles</h3>
               <div className="flex gap-2 items-center">
@@ -977,6 +1142,14 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
                         }
                         return {...ap, [activePid]: amap};
                       });
+                      setRoomsData(rd=>{
+                        const per = {...(rd[activePid] ?? {})};
+                        for (const k of Object.keys(per)) {
+                          const slotIdx = Number(k.split("|")[1]);
+                          if (slotIdx === i) delete per[k];
+                        }
+                        return {...rd, [activePid]: per};
+                      });
                     }}
                     className="ml-2 text-xs px-2 py-1 border rounded-lg"
                   >
@@ -1007,7 +1180,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
 
       {/* Calaix + Calendari */}
       <DndContext onDragEnd={onDragEnd} modifiers={[restrictToWindowEdges]}>
-        {/* Safata d'assignatures (sense selectors addicionals; es filtra pel període) */}
+        {/* Safata d'assignatures */}
         <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
           <h2 className="font-semibold mb-3">Assignatures (arrossega)</h2>
           <div className="flex flex-wrap gap-2">
@@ -1062,12 +1235,20 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
                             const amap = assignedPerPeriod[activePid] ?? {};
                             const subjIds = (amap[cellKey(dateIso, slotIndex)] ?? []);
                             const assignedList = subjIds.map(id => subjects.find(x => x.id === id)).filter(Boolean) as Subject[];
+
+                            const extrasForSubjects: Record<string, RoomsEnroll> = {};
+                            const extrasCell = roomsData?.[activePid]?.[cellKey(dateIso, slotIndex)] ?? {};
+                            for (const sid of subjIds) {
+                              if (extrasCell[sid]) extrasForSubjects[sid] = extrasCell[sid];
+                            }
+
                             return (
                               <DropCell
                                 key={i}
                                 id={`cell:${activePid}:${dateIso}:${slotIndex}`}
                                 disabled={disabled}
                                 assignedList={assignedList}
+                                extrasForSubjects={extrasForSubjects}
                                 onRemoveOne={(subjectId)=> removeOneFromCell(activePid, dateIso, slotIndex, subjectId)}
                               />
                             );
@@ -1087,7 +1268,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         <ul className="list-disc ml-5 space-y-1">
           <li>Fins a 5 períodes amb pestanyes; cada període amb <em>curs</em>, <em>quadrimestre</em>, franges, dates i dies no disponibles.</li>
           <li>La safata d’assignatures es filtra automàticament segons el període actiu.</li>
-          <li>CSV/Excel/TXT/JSON exporten tot el calendari (tots els períodes).</li>
+          <li>CSV/Excel/TXT/JSON exporten tot el calendari (tots els períodes). L’Excel ja inclou aules/estudiants si s’han importat.</li>
           <li>Pots guardar l’estat a l’enllaç, carregar-lo i copiar l’enllaç per compartir.</li>
         </ul>
       </div>
