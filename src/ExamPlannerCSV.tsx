@@ -49,13 +49,13 @@ interface Period {
   tipus: TipusPeriode;
   startStr: string;   // "yyyy-MM-dd"
   endStr: string;     // "yyyy-MM-dd"
-  curs?: number;      // any acadèmic (inici), ex. 2025
+  curs?: number;      // any acadèmic (inici)
   quad?: 1 | 2;       // quadrimestre del període
   blackouts?: string[];
 }
 
 interface Subject {
-  id: string;
+  id: string;         // id estable (normalment codi o, si no, sigles)
   codi: string;
   sigles: string;
   nivell?: string;
@@ -94,15 +94,15 @@ function MastersLines({ s }: { s: Subject }) {
   );
 }
 
-function Chip({ id, s }: { id: string; s: Subject }) {
+function TrayChip({ id, s, onHide }: { id: string; s: Subject; onHide: (id: string)=>void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id });
+    useDraggable({ id }); // arrossegar des de safata cap al calendari
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={`inline-flex flex-col px-3 py-2 rounded-2xl shadow-sm border text-sm cursor-grab active:cursor-grabbing select-none bg-white ${
+      className={`relative inline-flex flex-col px-3 py-2 rounded-2xl shadow-sm border text-sm cursor-grab active:cursor-grabbing select-none bg-white ${
         isDragging ? "opacity-70" : ""
       }`}
       style={{
@@ -119,6 +119,50 @@ function Chip({ id, s }: { id: string; s: Subject }) {
       ) : (
         <MastersLines s={s} />
       )}
+      {/* botó eliminar de safata */}
+      <button
+        onClick={(e)=>{ e.stopPropagation(); onHide(id); }}
+        className="absolute -top-2 -right-2 w-6 h-6 rounded-full border bg-white shadow text-xs"
+        title="Eliminar de la safata"
+        aria-label="Eliminar de la safata"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function PlacedChip({
+  pid, dateIso, slotIndex, s
+}: {
+  pid: number; dateIso: string; slotIndex: number; s: Subject;
+}) {
+  // id especial per moure entre cel·les
+  const dragId = `placed:${pid}:${dateIso}:${slotIndex}:${s.id}`;
+  const { attributes, listeners, setNodeRef, transform, isDragging } =
+    useDraggable({ id: dragId });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={`relative p-2 rounded-xl border shadow-sm bg-gray-50 ${isDragging ? "opacity-70 ring-2 ring-indigo-400" : ""}`}
+      style={{
+        transform: transform
+          ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
+          : undefined,
+      }}
+      title="Arrossega per moure a una altra franja"
+    >
+      <div className="text-sm font-semibold leading-tight">
+        {s.sigles} · {s.codi}
+      </div>
+      {s.nivell ? (
+        <div className="text-xs opacity-80">Nivell: {s.nivell}</div>
+      ) : (
+        <MastersLines s={s} />
+      )}
     </div>
   );
 }
@@ -129,12 +173,16 @@ function DropCell({
   assignedList,
   extrasForSubjects,
   onRemoveOne,
+  pid,
+  dateIso,
+  slotIndex,
 }: {
   id: string;
   disabled?: boolean;
   assignedList?: Subject[];
-  extrasForSubjects?: Record<string, RoomsEnroll>; // subjectId -> info
+  extrasForSubjects?: Record<string, RoomsEnroll>;
   onRemoveOne?: (subjectId: string) => void;
+  pid: number; dateIso: string; slotIndex: number;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id, disabled });
   return (
@@ -153,19 +201,10 @@ function DropCell({
             const hasRooms = extra && extra.rooms && extra.rooms.length > 0;
             const hasStud = extra && typeof extra.students === "number" && !Number.isNaN(extra.students);
             return (
-              <div
-                key={s.id}
-                className={`relative p-2 rounded-xl border shadow-sm ${disabled ? "opacity-60" : "bg-gray-50"}`}
-              >
-                <div className="text-sm font-semibold leading-tight">
-                  {s.sigles} · {s.codi}
-                </div>
-                {s.nivell ? (
-                  <div className="text-xs opacity-80">Nivell: {s.nivell}</div>
-                ) : (
-                  <MastersLines s={s} />
-                )}
-
+              <div key={s.id} className="relative">
+                {/* Capseta arrossegable entre cel·les */}
+                <PlacedChip pid={pid} dateIso={dateIso} slotIndex={slotIndex} s={s} />
+                {/* Dades extra */}
                 {(hasRooms || hasStud) && (
                   <div className="mt-1 space-y-0.5 text-xs">
                     {hasRooms && (
@@ -182,7 +221,6 @@ function DropCell({
                     )}
                   </div>
                 )}
-
                 {!disabled && onRemoveOne && (
                   <button
                     onClick={() => onRemoveOne(s.id)}
@@ -210,13 +248,13 @@ function DropCell({
 export default function ExamPlannerCSV() {
   /* Assignatures (demo inicial – es sobreescriuran amb CSV/JSON) */
   const [subjects, setSubjects] = useState<Subject[]>([
-    { id: "mat101", codi: "MAT101", sigles: "CALC I", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
-    { id: "fis201", codi: "FIS201", sigles: "FIS II", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
-    { id: "prg150", codi: "PRG150", sigles: "PRG", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
-    { id: "tic500", codi: "TIC500", sigles: "CIBER", curs: "2025", quadrimestre: 2, MCYBERS: "Sí", MET: "Optativa" },
+    { id: "MAT101", codi: "MAT101", sigles: "CALC I", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "FIS201", codi: "FIS201", sigles: "FIS II", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "PRG150", codi: "PRG150", sigles: "PRG", nivell: "GRAU", curs: "2025", quadrimestre: 1 },
+    { id: "TIC500", codi: "TIC500", sigles: "CIBER", curs: "2025", quadrimestre: 2, MCYBERS: "Sí", MET: "Optativa" },
   ]);
 
-  /* Períodes (amb curs/quad propis) */
+  /* Períodes */
   const [periods, setPeriods] = useState<Period[]>([{
     id: 1,
     label: "Període 1",
@@ -247,6 +285,9 @@ export default function ExamPlannerCSV() {
   /* Períodes on cada assignatura està permesa (derivat del CSV d’import) */
   const [allowedPeriodsBySubject, setAllowedPeriodsBySubject] = useState<Record<string, number[]>>({});
 
+  /* NOVETAT: llista d’ocultes (eliminades manualment de la safata) */
+  const [hiddenSubjectIds, setHiddenSubjectIds] = useState<string[]>([]);
+
   const activePeriod = periods.find((p) => p.id === activePid)!;
 
   function isDisabledDay(d: Date, p: Period) {
@@ -261,7 +302,7 @@ export default function ExamPlannerCSV() {
     return `${dateIso}|${slotIndex}`;
   }
 
-  /* Assignatures ja utilitzades — NOMÉS en el període actiu (important per “un cop per període”) */
+  /* Assignatures ja utilitzades — NOMÉS en el període actiu */
   const usedIds = useMemo(() => {
     const amap = assignedPerPeriod[activePid] ?? {};
     const s = new Set<string>();
@@ -269,7 +310,7 @@ export default function ExamPlannerCSV() {
     return s;
   }, [assignedPerPeriod, activePid]);
 
-  /* Filtrat automàtic segons curs/quad del període actiu + pertinença explícita al període */
+  /* Filtrat de la safata: quadrimestre + pertinença al període + no usada + no oculta */
   const availableSubjects = useMemo(() => {
     const pcurs = activePeriod?.curs != null ? String(activePeriod.curs) : undefined;
     const pquad = activePeriod?.quad;
@@ -277,17 +318,18 @@ export default function ExamPlannerCSV() {
 
     return subjects
       .filter((s) => !usedIds.has(s.id))
+      .filter((s) => !hiddenSubjectIds.includes(s.id))
       .filter((s) => (pcurs ? s.curs === pcurs : true))
       .filter((s) => (pquad ? s.quadrimestre === pquad : true))
       .filter((s) => {
         const allowed = allowedPeriodsBySubject[s.id];
         return Array.isArray(allowed) ? allowed.includes(pid) : true;
       });
-  }, [subjects, usedIds, activePeriod?.curs, activePeriod?.quad, activePid, allowedPeriodsBySubject]);
+  }, [subjects, usedIds, activePeriod?.curs, activePeriod?.quad, activePid, allowedPeriodsBySubject, hiddenSubjectIds]);
 
   /* Guardar/Carregar estat a URL (hash) */
   function saveStateToUrl() {
-    const payload = { subjects, periods, slotsPerPeriod, assignedPerPeriod, activePid, roomsData, allowedPeriodsBySubject };
+    const payload = { subjects, periods, slotsPerPeriod, assignedPerPeriod, activePid, roomsData, allowedPeriodsBySubject, hiddenSubjectIds };
     const packed = compressToEncodedURIComponent(JSON.stringify(payload));
     const url = new URL(window.location.href);
     url.hash = `state=${packed}`;
@@ -307,6 +349,7 @@ export default function ExamPlannerCSV() {
       if (data.assignedPerPeriod) setAssignedPerPeriod(data.assignedPerPeriod);
       if (data.roomsData) setRoomsData(data.roomsData);
       if (data.allowedPeriodsBySubject) setAllowedPeriodsBySubject(data.allowedPeriodsBySubject);
+      if (Array.isArray(data.hiddenSubjectIds)) setHiddenSubjectIds(data.hiddenSubjectIds);
       if (typeof data.activePid === "number") setActivePid(data.activePid);
       return true;
     } catch { return false; }
@@ -320,35 +363,49 @@ export default function ExamPlannerCSV() {
       .then(() => alert("Enllaç copiat!"))
       .catch(() => alert("No s’ha pogut copiar l’enllaç."));
   }
-  useEffect(() => { loadStateFromUrl(); /* un sol cop */ }, []);
+  useEffect(() => { loadStateFromUrl(); }, []);
 
-  /* DnD */
+  /* DnD - arrossegar des de safata o moure entre cel·les */
   function onDragEnd(e: any) {
-    const subjectId = e.active?.id as string;
+    const activeId = e.active?.id as string | undefined;
     const dropId = e.over?.id as string | undefined;
-    if (!dropId || !dropId.startsWith("cell:")) return;
-    // id = cell:periodId:YYYY-MM-DD:slotIndex
-    const [, pidStr, dateIso, slotIndexStr] = dropId.split(":");
-    const pid = Number(pidStr);
-    const period = periods.find((p) => p.id === pid);
-    if (!period) return;
+    if (!activeId || !dropId || !dropId.startsWith("cell:")) return;
+    // dropId = cell:periodId:YYYY-MM-DD:slotIndex
+    const [, dropPidStr, dropDateIso, dropSlotIndexStr] = dropId.split(":");
+    const dropPid = Number(dropPidStr);
+    const dropKey = cellKey(dropDateIso, Number(dropSlotIndexStr));
 
-    const dayDate = parseISO(dateIso);
-    if (isDisabledDay(dayDate, period)) return;
-
-    if (usedIds.has(subjectId)) {
-      alert("Aquesta assignatura ja està programada al període actiu.");
+    if (activeId.startsWith("placed:")) {
+      // Moure entre cel·les: placed:pid:dateIso:slotIndex:subjectId
+      const [, srcPidStr, srcDateIso, srcSlotIndexStr, subjectId] = activeId.split(":");
+      const srcPid = Number(srcPidStr);
+      const srcKey = cellKey(srcDateIso, Number(srcSlotIndexStr));
+      if (srcPid !== dropPid) return; // per simplicitat, només dins del període actiu (és l’únic visible)
+      setAssignedPerPeriod(prev => {
+        const amap = { ...(prev[srcPid] ?? {}) };
+        // treu de l’origen
+        amap[srcKey] = (amap[srcKey] ?? []).filter(id => id !== subjectId);
+        if (!amap[srcKey]?.length) delete amap[srcKey];
+        // afegeix al destí (si no hi és)
+        const destList = new Set(amap[dropKey] ?? []);
+        destList.add(subjectId);
+        amap[dropKey] = Array.from(destList);
+        return { ...prev, [srcPid]: amap };
+      });
       return;
     }
-    const key = cellKey(dateIso, Number(slotIndexStr));
+
+    // Si no és 'placed', és un id d’assignatura de la safata
+    const subjectId = activeId;
+    // ja evitem duplicats per període amb usedIds
     setAssignedPerPeriod((prev) => {
-      const prevMap = prev[pid] ?? {};
-      const nextList = (prevMap[key] ?? []).includes(subjectId)
-        ? prevMap[key]!
-        : [...(prevMap[key] ?? []), subjectId];
-      return { ...prev, [pid]: { ...prevMap, [key]: nextList } };
+      const prevMap = prev[dropPid] ?? {};
+      const nextList = new Set(prevMap[dropKey] ?? []);
+      nextList.add(subjectId);
+      return { ...prev, [dropPid]: { ...prevMap, [dropKey]: Array.from(nextList) } };
     });
   }
+
   function removeOneFromCell(pid: number, dateIso: string, slotIndex: number, subjectId: string) {
     const key = cellKey(dateIso, slotIndex);
     setAssignedPerPeriod((prev) => {
@@ -385,16 +442,11 @@ export default function ExamPlannerCSV() {
     setAssignedPerPeriod((ap) => { const c = { ...ap }; delete c[id]; return c; });
     setSlotsPerPeriod((sp) => { const c = { ...sp }; delete c[id]; return c; });
     setRoomsData((rd) => { const c = { ...rd }; delete c[id]; return c; });
-    // allowedPeriodsBySubject no cal tocar-ho
-    if (activePid === id) {
-      const rest = periods.filter((p) => p.id !== id);
-      if (rest.length) setActivePid(rest[0].id);
-    }
   }
 
   /* Exportacions */
   function exportJSON() {
-    const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects, roomsData, allowedPeriodsBySubject };
+    const data = { periods, slotsPerPeriod, assignedPerPeriod, subjects, roomsData, allowedPeriodsBySubject, hiddenSubjectIds };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -415,6 +467,7 @@ export default function ExamPlannerCSV() {
         if (Array.isArray(data.subjects)) setSubjects(data.subjects);
         if (data.roomsData) setRoomsData(data.roomsData);
         if (data.allowedPeriodsBySubject) setAllowedPeriodsBySubject(data.allowedPeriodsBySubject);
+        if (Array.isArray(data.hiddenSubjectIds)) setHiddenSubjectIds(data.hiddenSubjectIds);
         if (Array.isArray(data.periods) && data.periods.length) setActivePid(data.periods[0].id);
       } catch { alert("JSON no vàlid"); }
     };
@@ -609,7 +662,7 @@ export default function ExamPlannerCSV() {
     URL.revokeObjectURL(a.href);
   }
 
-/* ---------- Import CSV (assignatures + períodes) — SENSE duplicar assignatures ---------- */
+/* ---------- Import CSV (assignatures + períodes) — REPLACE (com abans) ---------- */
 const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
@@ -674,38 +727,29 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         const rows = (res.data as any[]).filter(Boolean);
 
         // --- Col·lectors ---
-        // 1) Subjects sense duplicar (clau: codi||sigles)
         const subjByKey = new Map<string, Subject>();
-        // 2) Períodes on apareix cada clau
         const periodsByKey = new Map<string, Set<number>>();
-        // 3) Períodes definits i slots
         const periodMap = new Map<number, Period>();
         const slotsMap: SlotsPerPeriod = {};
-
-        // Pistes per deduccions
         const quadSeenPerPid = new Map<number, 1|2>();
         const cursSeenPerPid = new Map<number, number>();
-
         const keyOf = (codi: any, sigles: any) =>
           `${String(codi||"").trim().toLowerCase()}||${String(sigles||"").trim().toLowerCase()}`;
 
         for (const r of rows) {
-          // --- Subject (sense duplicar) ---
           const codi = r.codi ?? r.codigo ?? r.CODI ?? r.CODIGO ?? r.code;
           const sigles = r.sigles ?? r.SIGLES ?? r.siglas ?? r.SIGLAS;
+          const nivell = (r.nivell ?? r.NIVELL ?? r.nivel ?? r.NIVEL)?.toString();
+          const curs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
+          const quadrimestre = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
+          const MET = r.MET ?? r.met;
+          const MATT = r.MATT ?? r.matt;
+          const MEE = r.MEE ?? r.mee;
+          const MCYBERS = r.MCYBERS ?? r.mcybers;
+
           if (codi || sigles) {
             const k = keyOf(codi, sigles);
-            const existed = subjByKey.get(k);
-
-            const nivell = (r.nivell ?? r.NIVELL ?? r.nivel ?? r.NIVEL)?.toString();
-            const curs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
-            const quadrimestre = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
-            const MET = r.MET ?? r.met;
-            const MATT = r.MATT ?? r.matt;
-            const MEE = r.MEE ?? r.mee;
-            const MCYBERS = r.MCYBERS ?? r.mcybers;
-
-            if (!existed) {
+            if (!subjByKey.has(k)) {
               subjByKey.set(k, {
                 id: String(codi || sigles),
                 codi: String(codi || ""),
@@ -719,7 +763,7 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
                 MCYBERS: MCYBERS ? String(MCYBERS) : undefined,
               });
             } else {
-              // Omple camps buits si en aquesta fila venen informats
+              const existed = subjByKey.get(k)!;
               if (!existed.nivell && nivell) existed.nivell = nivell;
               if (!existed.curs && curs) existed.curs = curs;
               if (!existed.quadrimestre && quadrimestre) existed.quadrimestre = quadrimestre;
@@ -730,25 +774,33 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
             }
           }
 
-          // --- Període associat a la fila ---
           const pidRaw = r.period_id ?? r.PERIOD_ID ?? r.PeriodId ?? r.periode ?? r.PERIODO ?? r.PERIOD;
           const pid = pidRaw ? Number(pidRaw) : NaN;
           if (Number.isFinite(pid) && pid >= 1 && pid <= 5) {
-            // Registra que aquesta assignatura (clau) pertany a aquest període
-            const k = keyOf(r.codi ?? r.CODI ?? r.code, r.sigles ?? r.SIGLES);
+            const k = keyOf(codi, sigles);
             if (k.trim() !== "||") {
               if (!periodsByKey.has(k)) periodsByKey.set(k, new Set<number>());
               periodsByKey.get(k)!.add(pid);
             }
           }
 
-          // Tipus de període + dates + slots
           const tipusRaw = (r.period_tipus ?? r.PERIOD_TIPUS ?? r.tipo ?? r.TIPO ?? "")
             .toString().toUpperCase();
           const tipusNorm: TipusPeriode =
             tipusRaw === "FINAL" ? "FINAL"
             : (tipusRaw === "REAVALUACIO" || tipusRaw === "REAVALUACIÓ" || tipusRaw === "REAVALUACION") ? "REAVALUACIÓ"
             : "PARCIAL";
+
+          const parseDate = (raw: any): string | undefined => {
+            if (!raw) return undefined;
+            const s = String(raw).trim();
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+            const m2 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+            if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+            return undefined;
+          };
 
           const startStr =
             parseDate(r.period_inici ?? r.PERIOD_INICI ?? r.start) ||
@@ -757,14 +809,32 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
             parseDate(r.period_fi ?? r.PERIOD_FI ?? r.end) ||
             format(fridayOfWeek(new Date()), "yyyy-MM-dd");
 
-          const slots = parseSlots(r.period_slots ?? r.PERIOD_SLOTS ?? r.slots) || [{ start: "08:00", end: "10:00" }];
-          const blackouts = parseBlackouts(r.period_blackouts ?? r.PERIOD_BLACKOUTS ?? r.blackouts ?? r.BLOCKED_DATES);
+          const parseSlotsLocal = (raw: any): TimeSlot[] => {
+            if (!raw) return [];
+            return String(raw).split(/[;,|]/).map(p=>p.trim()).filter(Boolean).map(pair=>{
+              const mm = pair.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+              if (!mm) return null;
+              const [_, a, b] = mm;
+              const pad = (h: string) => h.split(":").map((x) => x.padStart(2, "0")).join(":");
+              return { start: pad(a), end: pad(b) };
+            }).filter(Boolean) as TimeSlot[];
+          };
+          const slots = parseSlotsLocal(r.period_slots ?? r.PERIOD_SLOTS ?? r.slots) || [{ start: "08:00", end: "10:00" }];
+          const blackouts = (() => {
+            const raw = r.period_blackouts ?? r.PERIOD_BLACKOUTS ?? r.blackouts ?? r.BLOCKED_DATES;
+            if (!raw) return [];
+            const toks = String(raw).split(/[;,|]/).map((s) => s.trim()).filter(Boolean);
+            const out: string[] = [];
+            for (const t of toks) {
+              const d = parseDate(t);
+              if (d) out.push(d);
+            }
+            return Array.from(new Set(out)).sort();
+          })();
 
-          // Curs/quad declarats com a columnes de període
           const periodCurs = normCursAny(r.period_curs ?? r.PERIOD_CURS);
           const periodQuad = normQuad(r.period_quad ?? r.PERIOD_QUAD);
 
-          // Pistes
           const filaCurs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
           const filaQuad = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
           if (Number.isFinite(pid)) {
@@ -793,16 +863,12 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           }
         }
 
-        // Deducció final
         for (const [pid, p] of periodMap) {
           if (p.quad == null && quadSeenPerPid.has(pid)) p.quad = quadSeenPerPid.get(pid)!;
           if (p.curs == null && cursSeenPerPid.has(pid)) p.curs = cursSeenPerPid.get(pid)!;
         }
 
-        //  Subjects únics (sense sufixos aleatoris)
         const uniqueSubjects = Array.from(subjByKey.values());
-
-        // allowedPeriodsBySubject des de periodsByKey
         const nextAllowed: Record<string, number[]> = {};
         for (const s of uniqueSubjects) {
           const key = `${s.codi.trim().toLowerCase()}||${s.sigles.trim().toLowerCase()}`;
@@ -811,7 +877,6 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
         }
 
         setSubjects(uniqueSubjects);
-
         if (periodMap.size > 0) {
           const ordered = Array.from(periodMap.keys()).sort((a, b) => a - b);
           const list = ordered.map((k) => periodMap.get(k)!);
@@ -820,10 +885,12 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
           setAssignedPerPeriod({});
           setRoomsData({});
           setAllowedPeriodsBySubject(nextAllowed);
+          setHiddenSubjectIds([]);
           setActivePid(list[0].id);
           alert(`Importades ${uniqueSubjects.length} assignatures i ${list.length} períodes del CSV.`);
         } else {
           setAllowedPeriodsBySubject(nextAllowed);
+          setHiddenSubjectIds([]);
           alert(`Importades ${uniqueSubjects.length} assignatures del CSV.`);
         }
       } catch (err) {
@@ -837,7 +904,154 @@ const handleImportCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   e.currentTarget.value = "";
 };
 
-/* ---------- Import CSV (Aules + Matriculats) — igual ---------- */
+/* ---------- Import CSV (assignatures + períodes) — MERGE (no toca res existent) ---------- */
+const handleMergeSubjectsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+
+  const normQuad = (raw: any): 1 | 2 | undefined => {
+    if (raw == null || raw === "") return undefined;
+    const n = Number(String(raw).replace(/\D/g, ""));
+    return n === 1 || n === 2 ? (n as 1 | 2) : undefined;
+  };
+  const normCursAny = (raw: any): string | undefined => {
+    if (!raw && raw !== 0) return undefined;
+    const s = String(raw).trim();
+    const m = s.match(/^(\d{4})\s*[-/]/);
+    if (m) return m[1];
+    const y = s.match(/^\d{4}$/);
+    if (y) return y[0];
+    const first4 = s.match(/(\d{4})/);
+    return first4 ? first4[1] : undefined;
+  };
+  const parseDate = (raw: any): string | undefined => {
+    if (!raw) return undefined;
+    const s = String(raw).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const m2 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
+    return undefined;
+  };
+
+  Papa.parse(f, {
+    header: true,
+    skipEmptyLines: true,
+    complete: (res: Papa.ParseResult<any>) => {
+      try {
+        const rows = (res.data as any[]).filter(Boolean);
+
+        // Índexos auxiliars actuals
+        const subjById = new Map(subjects.map(s => [s.id, s] as const));
+        const subjKeyIndex = new Map<string, string>(); // key -> subjectId
+        for (const s of subjects) {
+          const key = `${s.codi.trim().toLowerCase()}||${s.sigles.trim().toLowerCase()}`;
+          subjKeyIndex.set(key, s.id);
+        }
+        const nextSubjects = [...subjects];
+        const nextAllowed = { ...allowedPeriodsBySubject };
+        const nextPeriods = [...periods];
+        const nextSlotsPerPeriod: SlotsPerPeriod = JSON.parse(JSON.stringify(slotsPerPeriod));
+
+        const keyOf = (codi: any, sigles: any) =>
+          `${String(codi||"").trim().toLowerCase()}||${String(sigles||"").trim().toLowerCase()}`;
+
+        let addedSubjects = 0;
+        let updatedSubjects = 0;
+        let addedPeriods = 0;
+
+        for (const r of rows) {
+          const codi = r.codi ?? r.codigo ?? r.CODI ?? r.CODIGO ?? r.code;
+          const sigles = r.sigles ?? r.SIGLES ?? r.siglas ?? r.SIGLAS;
+          if (!codi && !sigles) continue;
+          const k = keyOf(codi, sigles);
+
+          const nivell = (r.nivell ?? r.NIVELL ?? r.nivel ?? r.NIVEL)?.toString();
+          const curs = normCursAny(r.curs ?? r.CURS ?? r.curso ?? r.CURSO);
+          const quadrimestre = normQuad(r.quadrimestre ?? r.QUADRIMESTRE ?? r.quad ?? r.QUAD);
+          const MET = r.MET ?? r.met;
+          const MATT = r.MATT ?? r.matt;
+          const MEE = r.MEE ?? r.mee;
+          const MCYBERS = r.MCYBERS ?? r.mcybers;
+
+          let subjectId = subjKeyIndex.get(k);
+          if (!subjectId) {
+            subjectId = String(codi || sigles);
+            subjKeyIndex.set(k, subjectId);
+            nextSubjects.push({
+              id: subjectId,
+              codi: String(codi || ""),
+              sigles: String(sigles || ""),
+              nivell: nivell || undefined,
+              curs: curs || undefined,
+              quadrimestre: quadrimestre,
+              MET: MET ? String(MET) : undefined,
+              MATT: MATT ? String(MATT) : undefined,
+              MEE: MEE ? String(MEE) : undefined,
+              MCYBERS: MCYBERS ? String(MCYBERS) : undefined,
+            });
+            addedSubjects++;
+          } else {
+            const s = subjById.get(subjectId) || nextSubjects.find(x=>x.id===subjectId)!;
+            // omple només camps buits
+            if (!s.nivell && nivell) { s.nivell = nivell; updatedSubjects++; }
+            if (!s.curs && curs) { s.curs = curs; updatedSubjects++; }
+            if (!s.quadrimestre && quadrimestre) { s.quadrimestre = quadrimestre; updatedSubjects++; }
+            if (!s.MET && MET) { s.MET = String(MET); updatedSubjects++; }
+            if (!s.MATT && MATT) { s.MATT = String(MATT); updatedSubjects++; }
+            if (!s.MEE && MEE) { s.MEE = String(MEE); updatedSubjects++; }
+            if (!s.MCYBERS && MCYBERS) { s.MCYBERS = String(MCYBERS); updatedSubjects++; }
+          }
+
+          // Període
+          const pidRaw = r.period_id ?? r.PERIOD_ID ?? r.PeriodId ?? r.periode ?? r.PERIODO ?? r.PERIOD;
+          const pid = pidRaw ? Number(pidRaw) : NaN;
+
+          if (Number.isFinite(pid) && pid >= 1 && pid <= 5) {
+            // Afegir període si no existeix
+            if (!nextPeriods.find(p => p.id === pid)) {
+              const tipusRaw = (r.period_tipus ?? r.PERIOD_TIPUS ?? r.tipo ?? r.TIPO ?? "")
+                .toString().toUpperCase();
+              const tipus: TipusPeriode =
+                tipusRaw === "FINAL" ? "FINAL"
+                : (tipusRaw === "REAVALUACIO" || tipusRaw === "REAVALUACIÓ" || tipusRaw === "REAVALUACION") ? "REAVALUACIÓ"
+                : "PARCIAL";
+              const startStr =
+                parseDate(r.period_inici ?? r.PERIOD_INICI ?? r.start) ||
+                format(mondayOfWeek(new Date()), "yyyy-MM-dd");
+              const endStr =
+                parseDate(r.period_fi ?? r.PERIOD_FI ?? r.end) ||
+                format(fridayOfWeek(new Date()), "yyyy-MM-dd");
+              nextPeriods.push({ id: pid, label: `Període ${pid}`, tipus, startStr, endStr, blackouts: [] });
+              nextSlotsPerPeriod[pid] = nextSlotsPerPeriod[pid] ?? [{ start: "08:00", end: "10:00" }];
+              addedPeriods++;
+            }
+            // allowedPeriodsBySubject (merge)
+            const arr = new Set(nextAllowed[subjectId] ?? []);
+            arr.add(pid);
+            nextAllowed[subjectId] = Array.from(arr).sort((a,b)=>a-b);
+          }
+        }
+
+        setSubjects(nextSubjects);
+        setAllowedPeriodsBySubject(nextAllowed);
+        setPeriods(nextPeriods.sort((a,b)=>a.id-b.id));
+        setSlotsPerPeriod(nextSlotsPerPeriod);
+        // NO toquem assignedPerPeriod, roomsData, activePid, hiddenSubjectIds
+        alert(`Afegides ${addedSubjects} assignatures (actualitzades ${updatedSubjects}). Nous períodes: ${addedPeriods}.`);
+      } catch (err) {
+        console.error(err);
+        alert("Error processant el CSV (merge).");
+      }
+    },
+    error: () => alert("No s'ha pogut llegir el fitxer CSV (merge)"),
+  });
+
+  e.currentTarget.value = "";
+};
+
+/* ---------- Import CSV (Aules + Matriculats) — igual (merge) ---------- */
 const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
@@ -944,7 +1158,7 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
       <h1 className="text-2xl font-bold mb-2">Planificador d'exàmens — períodes amb curs/quadrimestre</h1>
       <p className="text-sm mb-6">
         CSV esperat (assignatures/períodes): <code>codi,sigles,nivell,curs,quadrimestre,period_id,period_tipus,period_inici,period_fi,period_slots,period_blackouts</code>.
-        Opcional: <code>MET,MATT,MEE,MCYBERS</code>. També admet <code>period_curs,period_quad</code>.
+        Opcional: <code>MET,MATT,MEE,MCYBERS</code>.
       </p>
 
       {/* Intercanvi de dades */}
@@ -952,8 +1166,13 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
         <h2 className="font-semibold mb-3">Dades i intercanvi</h2>
         <div className="flex flex-wrap gap-3 items-center">
           <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
-            Importar CSV
+            Importar CSV (REEMPLAÇA)
             <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCSV} />
+          </label>
+
+          <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
+            Afegir assignatures (CSV) — MERGE
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleMergeSubjectsCSV} />
           </label>
 
           <label className="px-3 py-2 border rounded-xl shadow-sm cursor-pointer bg-white">
@@ -978,6 +1197,7 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
             Carregar de l’enllaç
           </button>
           <button onClick={copyLinkToClipboard} className="px-3 py-2 border rounded-xl shadow-sm">Copiar enllaç</button>
+
           <span className="text-xs text-gray-500 ml-auto">
             Disponibles: {availableSubjects.length}/{subjects.length}
           </span>
@@ -1008,7 +1228,7 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
         </div>
       </div>
 
-      {/* Configuració període actiu */}
+      {/* Configuració del període actiu (resum) */}
       {activePeriod && (
         <div className="grid md:grid-cols-3 gap-4 mb-6">
           <div className="p-4 rounded-2xl border shadow-sm bg-white">
@@ -1057,67 +1277,6 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
               <option value={1}>1</option>
               <option value={2}>2</option>
             </select>
-
-            <label className="block text-sm mt-3 mb-1">Inici</label>
-            <input
-              type="date"
-              value={activePeriod.startStr}
-              onChange={(e)=> setPeriods(arr => arr.map(p => p.id===activePid? {...p, startStr: e.target.value}: p))}
-              className="w-full border rounded-xl p-2"
-            />
-            <label className="block text-sm mt-3 mb-1">Fi</label>
-            <input
-              type="date"
-              value={activePeriod.endStr}
-              onChange={(e)=> setPeriods(arr => arr.map(p => p.id===activePid? {...p, endStr: e.target.value}: p))}
-              className="w-full border rounded-xl p-2"
-            />
-
-            {/* Blackouts */}
-            <div className="mt-4">
-              <h3 className="font-semibold mb-2 text-sm">Dies no disponibles</h3>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="date"
-                  min={activePeriod.startStr}
-                  max={activePeriod.endStr}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (!v) return;
-                    setPeriods(arr => arr.map(p=>{
-                      if (p.id !== activePid) return p;
-                      const set = new Set(p.blackouts ?? []);
-                      set.add(v);
-                      return {...p, blackouts: Array.from(set).sort()};
-                    }));
-                    e.currentTarget.value = "";
-                  }}
-                  className="border rounded-xl p-2"
-                />
-                <span className="text-xs text-gray-500">Afegeix un dia del rang per bloquejar-lo</span>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(activePeriod.blackouts ?? []).map(d => (
-                  <span key={d} className="inline-flex items-center gap-2 px-2 py-1 rounded-lg border text-xs bg-gray-50">
-                    {format(parseISO(d), "dd/MM/yyyy")}
-                    <button
-                      className="w-5 h-5 rounded-full border bg-white text-[10px]"
-                      title="Eliminar"
-                      onClick={()=>{
-                        setPeriods(arr => arr.map(p=>{
-                          if (p.id !== activePid) return p;
-                          const next = (p.blackouts ?? []).filter(x=>x!==d);
-                          return {...p, blackouts: next};
-                        }));
-                      }}
-                    >×</button>
-                  </span>
-                ))}
-                {(activePeriod.blackouts ?? []).length === 0 && (
-                  <span className="text-xs text-gray-500 italic">No hi ha dies bloquejats</span>
-                )}
-              </div>
-            </div>
           </div>
 
           {/* Franges horàries */}
@@ -1152,72 +1311,61 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
                     }}
                     className="border rounded-xl p-2 w-28" placeholder="HH:mm"
                   />
-                  <button
-                    onClick={()=>{
-                      setSlotsPerPeriod(sp=>{
-                        const arr=[...(sp[activePid]??[])].filter((_,idx)=> idx!==i);
-                        return {...sp, [activePid]: arr};
-                      });
-                      setAssignedPerPeriod(ap=>{
-                        const amap = {...(ap[activePid] ?? {})};
-                        for (const k of Object.keys(amap)) {
-                          const slotIdx = Number(k.split("|")[1]);
-                          if (slotIdx === i) delete amap[k];
-                        }
-                        return {...ap, [activePid]: amap};
-                      });
-                      setRoomsData(rd=>{
-                        const per = {...(rd[activePid] ?? {})};
-                        for (const k of Object.keys(per)) {
-                          const slotIdx = Number(k.split("|")[1]);
-                          if (slotIdx === i) delete per[k];
-                        }
-                        return {...rd, [activePid]: per};
-                      });
-                    }}
-                    className="ml-2 text-xs px-2 py-1 border rounded-lg"
-                  >
-                    Eliminar
-                  </button>
                 </div>
               ))}
             </div>
-            <button
-              onClick={()=>{
-                setSlotsPerPeriod(sp=>{
-                  const cur = sp[activePid] ?? [];
-                  const last = cur[cur.length-1];
-                  const nextStart = last? last.end : "08:00";
-                  const [h,m] = nextStart.split(":").map(Number);
-                  const endH = (h+2).toString().padStart(2,"0");
-                  const next = { start: nextStart, end: `${endH}:${(m||0).toString().padStart(2,"0")}` };
-                  return {...sp, [activePid]: [...cur, next]};
-                });
-              }}
-              className="mt-3 px-3 py-2 border rounded-xl shadow-sm"
-            >
-              Afegir franja
-            </button>
           </div>
         </div>
       )}
 
-      {/* Calaix + Calendari */}
+      {/* Safata + Calendari */}
       <DndContext onDragEnd={onDragEnd} modifiers={[restrictToWindowEdges]}>
         {/* Safata d'assignatures */}
-        <div className="p-4 rounded-2xl border shadow-sm bg-white mb-6">
+        <div className="p-4 rounded-2xl border shadow-sm bg-white mb-3">
           <h2 className="font-semibold mb-3">Assignatures (arrossega)</h2>
           <div className="flex flex-wrap gap-2">
             {availableSubjects.map((s) => (
-              <Chip key={s.id} id={s.id} s={s} />
+              <TrayChip key={s.id} id={s.id} s={s} onHide={(id)=> setHiddenSubjectIds(prev=> Array.from(new Set([...prev, id])))} />
             ))}
             {!availableSubjects.length && (
               <div className="text-xs text-gray-500 italic">
-                No hi ha assignatures per al curs/quadrimestre i període d’aquest calendari, o ja estan totes programades.
+                No hi ha assignatures per al curs/quadrimestre i període d’aquest calendari, o ja estan totes programades/ocultes.
               </div>
             )}
           </div>
         </div>
+
+        {/* Llista d'eliminades (amb restauració) */}
+        {hiddenSubjectIds.length > 0 && (
+          <div className="p-3 rounded-xl border shadow-sm bg-yellow-50 mb-6 text-sm">
+            <div className="font-semibold mb-2">Assignatures eliminades de la safata</div>
+            <div className="flex flex-wrap gap-2">
+              {hiddenSubjectIds.map(id => {
+                const s = subjects.find(x=>x.id===id);
+                if (!s) return null;
+                return (
+                  <span key={id} className="inline-flex items-center gap-2 px-2 py-1 rounded-lg border bg-white">
+                    {s.sigles || s.codi}
+                    <button
+                      className="text-xs px-2 py-0.5 border rounded-md"
+                      onClick={()=> setHiddenSubjectIds(prev=> prev.filter(x=>x!==id))}
+                      title="Restaurar a la safata"
+                    >
+                      Restaurar
+                    </button>
+                  </span>
+                );
+              })}
+              <button
+                className="ml-2 text-xs px-2 py-0.5 border rounded-md bg-white"
+                onClick={()=> setHiddenSubjectIds([])}
+                title="Restaurar totes"
+              >
+                Restaurar totes
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Calendari del període actiu */}
         {activePeriod && (
@@ -1274,6 +1422,9 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
                                 assignedList={assignedList}
                                 extrasForSubjects={extrasForSubjects}
                                 onRemoveOne={(subjectId)=> removeOneFromCell(activePid, dateIso, slotIndex, subjectId)}
+                                pid={activePid}
+                                dateIso={dateIso}
+                                slotIndex={slotIndex}
                               />
                             );
                           })}
@@ -1287,14 +1438,6 @@ const handleImportRoomsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) => 
           </div>
         )}
       </DndContext>
-
-      <div className="mt-8 text-xs text-gray-500">
-        <ul className="list-disc ml-5 space-y-1">
-          <li>La safata mostra només les assignatures del <em>quadrimestre</em> i el <em>període</em> actiu segons el CSV.</li>
-          <li>Una assignatura es pot programar una vegada per cada període on apareix al CSV.</li>
-          <li>Exportacions (CSV/TXT/Excel) inclouen totes les pestanyes; l’Excel afegeix Aules/Estudiants si s’han importat.</li>
-        </ul>
-      </div>
     </div>
   );
 }
