@@ -1487,40 +1487,6 @@ function formatSubjectForCell(s: Subject, extra?: RoomsEnroll): string {
       if (m2) return `${m2[3]}-${m2[2]}-${m2[1]}`;
       return undefined;
     };
-    const parseSlots = (raw: any): TimeSlot[] => {
-      if (!raw) return [];
-      return String(raw)
-        .split(/[;,|]/)
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .map((pair) => {
-          const mm = pair.match(
-            /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/
-          );
-          if (!mm) return null;
-          const [_, a, b] = mm;
-          const pad = (h: string) =>
-            h
-              .split(":")
-              .map((x) => x.padStart(2, "0"))
-              .join(":");
-          return { start: pad(a), end: pad(b) };
-        })
-        .filter(Boolean) as TimeSlot[];
-    };
-    const parseBlackouts = (raw: any): string[] => {
-      if (!raw) return [];
-      const toks = String(raw)
-        .split(/[;,|]/)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      const out: string[] = [];
-      for (const t of toks) {
-        const d = parseDate(t);
-        if (d) out.push(d);
-      }
-      return Array.from(new Set(out)).sort();
-    };
     const normQuad = (raw: any): 1 | 2 | undefined => {
       if (raw == null || raw === "") return undefined;
       const n = Number(String(raw).replace(/\D/g, ""));
@@ -1974,46 +1940,6 @@ const handleMergeSubjectsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) =
 
 
   /* ---------- Helpers per dates d'aules ---------- */
-  function normalizeDateToIso(raw: any): string | undefined {
-    if (raw == null) return undefined;
-    const s = String(raw).trim();
-    if (!s) return undefined;
-
-    // yyyy-MM-dd
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-    // dd/MM/yyyy
-    let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-
-    // dd-MM-yyyy
-    m = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-
-    // Excel serial (dies des de 1899-12-30 aprox.)
-    const n = Number(s);
-    if (!Number.isNaN(n) && n > 30000 && n < 80000) {
-      const excelEpoch = new Date(1899, 11, 30);
-      const d = new Date(excelEpoch.getTime() + n * 86400000);
-      const yy = d.getFullYear();
-      const mm = String(d.getMonth() + 1).padStart(2, "0");
-      const dd = String(d.getDate()).padStart(2, "0");
-      return `${yy}-${mm}-${dd}`;
-    }
-
-    return undefined;
-  }
-
-  function normalizeTime(raw: any): string | undefined {
-    if (raw == null) return undefined;
-    const s = String(raw).trim();
-    if (!s) return undefined;
-    const m = s.match(/^(\d{1,2}):(\d{2})/);
-    if (!m) return undefined;
-    const hh = m[1].padStart(2, "0");
-    const mm = m[2];
-    return `${hh}:${mm}`;
-  }
 
   /* ---------- Import CSV (Aules + Matriculats) ---------- */
 function handleImportRoomsCSV(ev: React.ChangeEvent<HTMLInputElement>) {
