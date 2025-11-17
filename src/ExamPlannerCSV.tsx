@@ -106,10 +106,10 @@ function MastersLines({ s }: { s: Subject }) {
 
   return (
     <div className="mt-1 text-[10px] leading-tight space-y-0.5">
-      {/* MET en rojo, solo el valor */}
+      {/* MET sin etiqueta, color neutro (ajústalo si quieres otro) */}
       {s.MET && (
-        <div className="text-red-700">
-          <span>{s.MET}</span>
+        <div className="text-gray-600">
+        <span>{s.MET}</span>
         </div>
       )}
 
@@ -120,10 +120,10 @@ function MastersLines({ s }: { s: Subject }) {
         </div>
       )}
 
-      {/* MEE sin etiqueta, color neutro (ajústalo si quieres otro) */}
+      {/* MEE en rojo, solo el valor */}
       {s.MEE && (
-        <div className="text-gray-600">
-          <span>{s.MEE}</span>
+       <div className="text-red-700"> 
+           <span>{s.MEE}</span>
         </div>
       )}
 
