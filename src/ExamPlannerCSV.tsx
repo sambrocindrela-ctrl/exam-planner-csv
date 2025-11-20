@@ -447,20 +447,30 @@ export default function ExamPlannerCSV() {
 
   /* Filtrat de la safata: quadrimestre + pertinença al període + no usada + no oculta */
   const availableSubjects = useMemo(() => {
-    const pcurs =
-      activePeriod?.curs != null ? String(activePeriod.curs) : undefined;
-    const pquad = activePeriod?.quad;
-    const pid = activePid;
+const pcurs = activePeriod?.curs != null ? String(activePeriod.curs) : undefined;
+const pquad = activePeriod?.quad;
+const pid = activePid;
 
-    return subjects
-      .filter((s) => !usedIds.has(s.id))
-      .filter((s) => !hiddenSubjectIds.includes(s.id))
-      .filter((s) => (pcurs ? s.curs === pcurs : true))
-      .filter((s) => (pquad ? s.quadrimestre === pquad : true))
-      .filter((s) => {
-        const allowed = allowedPeriodsBySubject[s.id];
-        return Array.isArray(allowed) ? allowed.includes(pid) : true;
-      });
+return subjects
+  .filter((s) => !usedIds.has(s.id))
+  .filter((s) => !hiddenSubjectIds.includes(s.id))
+  .filter((s) => (pcurs ? s.curs === pcurs : true))
+  .filter((s) => {
+    const allowed = allowedPeriodsBySubject[s.id];
+
+    // Si el CSV ha definit explícitament en quins períodes pot anar
+    // aquesta assignatura, fem CAS a això i IGNOREM el quadrimestre
+    // guardat al Subject (pot ser 1, però també ha de sortir al 2).
+    if (Array.isArray(allowed)) {
+      return allowed.includes(pid);
+    }
+
+    // Si no hi ha info de CSV per a aquesta assignatura,
+    // mantenim el comportament antic: filtre per quadrimestre.
+    return pquad ? s.quadrimestre === pquad : true;
+  });
+
+
   }, [
     subjects,
     usedIds,
@@ -1852,14 +1862,55 @@ const handleMergeSubjectsCSV: React.ChangeEventHandler<HTMLInputElement> = (e) =
               subjById.get(subjectId) ||
               nextSubjects.find(x => x.id === subjectId)!;
 
-            if (!s.nivell && nivell) { s.nivell = nivell; updatedSubjects++; }
-            if (!s.curs && curs) { s.curs = curs; updatedSubjects++; }
-            if (!s.quadrimestre && quadrimestre) { s.quadrimestre = quadrimestre; updatedSubjects++; }
-            if (!s.MET && MET) { s.MET = String(MET); updatedSubjects++; }
-            if (!s.MATT && MATT) { s.MATT = String(MATT); updatedSubjects++; }
-            if (!s.MEE && MEE) { s.MEE = String(MEE); updatedSubjects++; }
-            if (!s.MCYBERS && MCYBERS) { s.MCYBERS = String(MCYBERS); updatedSubjects++; }
+            let changed = false;
+
+            // Prenem el CSV com a "veritat" actual per aquests camps.
+            // Si canvien → actualitzem; si al CSV estan buits → els buidem.
+
+            if (s.nivell !== (nivell || undefined)) {
+              s.nivell = nivell || undefined;
+              changed = true;
+            }
+
+            if (s.curs !== (curs || undefined)) {
+              s.curs = curs || undefined;
+              changed = true;
+            }
+
+            if (s.quadrimestre !== quadrimestre) {
+              s.quadrimestre = quadrimestre;
+              changed = true;
+            }
+
+            const METstr = MET ? String(MET) : undefined;
+            if (s.MET !== METstr) {
+              s.MET = METstr;
+              changed = true;
+            }
+
+            const MATTstr = MATT ? String(MATT) : undefined;
+            if (s.MATT !== MATTstr) {
+              s.MATT = MATTstr;
+              changed = true;
+            }
+
+            const MEEstr = MEE ? String(MEE) : undefined;
+            if (s.MEE !== MEEstr) {
+              s.MEE = MEEstr;
+              changed = true;
+            }
+
+            const MCYBERSstr = MCYBERS ? String(MCYBERS) : undefined;
+            if (s.MCYBERS !== MCYBERSstr) {
+              s.MCYBERS = MCYBERSstr;
+              changed = true;
+            }
+
+            if (changed) {
+              updatedSubjects++;
+            }
           }
+
 
           const pidRaw =
             r.period_id ??
